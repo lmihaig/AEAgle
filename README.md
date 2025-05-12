@@ -1,0 +1,5 @@
+# Description
+
+In this project, we want to take a closer look at the design and implementation of embedded memory allocators, i.e., the underlying functionality of typical memory allocation functions such as malloc and free. As a first target, we investigate memory allocators targeting microcontroller-based embedded systems. This implies that we do not have an underlying operating system that provides memory allocation mechanisms (e.g., via syscalls such as brk and mmap) but that the code running on the system has full access to the physical memory and is fully responsible for managing the available memory.
+
+The goal of the project is twofold: first, we want to get an overview of what different types of allocator designs exist in the embedded space, and what inspired their designs (realtime requirements, memory sparsity, etc.). Second, we aim to define (realistic) threat models for an attacker targeting such a system and to analyze the allocator designs with respect to their resilience to our threat model(s).
