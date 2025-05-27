@@ -1,3 +1,5 @@
+working dir: operating-systems/
+
 ## Zephyr
 
 pip install west
