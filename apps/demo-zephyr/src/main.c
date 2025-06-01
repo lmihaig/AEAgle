@@ -1,69 +1,76 @@
-#include <stdint.h>
-#include <string.h>
+#include <inttypes.h>
 #include <zephyr/kernel.h>
+#include <zephyr/sys/mem_stats.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/sys_heap.h>
 
-#define OS_NAME "Zephyr OS"
-#define TEST_NAME "UseAfterFree"
+#define ALLOCATOR_NAME "ZephyrOS"
+#define TEST_NAME "BurstMalloc"
 #define BLOCK_SIZE 128
-#define PATTERN_BYTE 0xAA
-#define INSPECT_BYTES 8
+#define BURST_ROUNDS 10
+#define BURST_COUNT 10
 
 K_HEAP_DEFINE(my_heap, 65536);
 
-static void print_banner(bool start) {
-  const char *marker = start ? "[START]" : "[END]";
-  printk("[TICKS] %llu\n", k_uptime_ticks());
-  printk("%s %s - %s\n", marker, OS_NAME, TEST_NAME);
+static uint32_t alloc_cnt, free_cnt;
+
+#define P_META() printk("META,tick_hz,%u\n", CONFIG_SYS_CLOCK_TICKS_PER_SEC)
+
+#define P_TIME(ph, op, sz, ti, to, res)                                        \
+  printk("TIME,%s,%s,%u,%" PRIu64 ",%" PRIu64 ",%s,%u,%u\n", ph, op,           \
+         (unsigned)(sz), (uint64_t)(ti), (uint64_t)(to), res, alloc_cnt,       \
+         free_cnt)
+
+#define P_SNAP(ph, st)                                                         \
+  printk("SNAP,%s,%zu,%zu,%zu\n", ph, (size_t)(st).free_bytes,                 \
+         (size_t)(st).allocated_bytes, (size_t)(st).max_allocated_bytes)
+
+#define P_FAULT(res)                                                           \
+  printk("FAULT,%" PRIu64 ",0xDEAD,%s\n", (uint64_t)k_uptime_ticks(), res)
+
+static void emit_snapshot(const char *phase) {
+  struct sys_memory_stats st;
+  sys_heap_runtime_stats_get(&my_heap.heap, &st);
+  P_SNAP(phase, st);
 }
 
-static void dump_snapshot(const char *phase) {
-  printk("[SNAPSHOT %s START]\n", phase);
-  sys_heap_print_info(&my_heap.heap, true);
-  printk("[TICKS] %llu\n", k_uptime_ticks());
-  printk("[SNAPSHOT %s END]\n", phase);
-}
+int main(void) {
+  void *buf[BURST_COUNT];
 
-static void inspect_data(uint8_t *ptr, const char *label) {
-  printk("[INSPECT %s] first %d bytes:", label, INSPECT_BYTES);
-  for (int i = 0; i < INSPECT_BYTES; i++) {
-    printk(" %02X", ptr[i]);
+  printk("# %s %s start\n", ALLOCATOR_NAME, TEST_NAME);
+  P_META();
+
+  for (int round = 1; round <= BURST_ROUNDS; ++round) {
+
+    int i;
+    for (i = 0; i < BURST_COUNT; ++i) {
+      uint64_t tin = k_uptime_ticks();
+      buf[i] = k_heap_alloc(&my_heap, BLOCK_SIZE, K_NO_WAIT);
+      uint64_t tout = k_uptime_ticks();
+
+      if (!buf[i]) {
+        P_TIME("burst", "malloc", BLOCK_SIZE, tin, tout, "NULL");
+        P_FAULT("OOM");
+        goto done;
+      }
+      ++alloc_cnt;
+      P_TIME("burst", "malloc", BLOCK_SIZE, tin, tout, "OK");
+    }
+
+    emit_snapshot("after_alloc");
+
+    for (int j = i - 1; j >= 0; --j) {
+      uint64_t tin = k_uptime_ticks();
+      k_heap_free(&my_heap, buf[j]);
+      uint64_t tout = k_uptime_ticks();
+
+      ++free_cnt;
+      P_TIME("free", "free", BLOCK_SIZE, tin, tout, "OK");
+    }
+
+    emit_snapshot("after_free");
   }
-  printk("\n");
-}
 
-void main(void) {
-  void *p1 = NULL;
-  void *p2 = NULL;
-
-  print_banner(true);
-
-  p1 = k_heap_alloc(&my_heap, BLOCK_SIZE, K_NO_WAIT);
-  if (!p1) {
-    printk("[ERROR] malloc returned NULL; aborting test\n");
-    print_banner(false);
-    return;
-  }
-  dump_snapshot("AFTER_MALLOC1");
-
-  k_heap_free(&my_heap, p1);
-  dump_snapshot("AFTER_FREE1");
-
-  memset(p1, PATTERN_BYTE, BLOCK_SIZE);
-  printk("[ACTION] Wrote pattern 0x%X into freed memory at %p\n", PATTERN_BYTE,
-         p1);
-  dump_snapshot("AFTER_UAF_WRITE");
-
-  p2 = k_heap_alloc(&my_heap, BLOCK_SIZE, K_NO_WAIT);
-  if (!p2) {
-    printk("[ERROR] second malloc returned NULL; cannot inspect data\n");
-    print_banner(false);
-    return;
-  }
-  dump_snapshot("AFTER_MALLOC2");
-
-  inspect_data((uint8_t *)p2, "NEW_BLOCK");
-
-  print_banner(false);
+done:
+  printk("# %s %s end\n", ALLOCATOR_NAME, TEST_NAME);
 }

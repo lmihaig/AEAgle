@@ -1,3 +1,4 @@
-zephyrproject/
+operating-systems/*
+!operating-systems/README.md
 
 build/
