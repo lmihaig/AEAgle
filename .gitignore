@@ -1,4 +1,6 @@
 operating-systems/*
 !operating-systems/README.md
 
+bin/
+.cache/
 build/

@@ -6,7 +6,7 @@ PROCESS_THREAD(hello_world_process, ev, data) {
 
   PROCESS_BEGIN();
 
-  printf("eat shit texas instruments\n");
+  printf("hello texas instruments\r\n");
 
   PROCESS_END();
 }
