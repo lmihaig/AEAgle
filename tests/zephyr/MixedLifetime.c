@@ -5,8 +5,9 @@
 #include <zephyr/sys/sys_heap.h>
 
 #define ALLOCATOR_NAME "ZephyrOS"
-#define TEST_NAME "BurstMalloc"
+#define TEST_NAME "MixedLifetime"
 #define BLOCK_SIZE 128
+#define PIN_COUNT 5
 #define BURST_ROUNDS 10
 #define BURST_COUNT 10
 
@@ -35,42 +36,63 @@ static void emit_snapshot(const char *phase) {
 }
 
 int main(void) {
+  void *pinned[PIN_COUNT];
   void *buf[BURST_COUNT];
 
   printk("# %s %s start\n", ALLOCATOR_NAME, TEST_NAME);
   P_META();
 
-  for (int round = 1; round <= BURST_ROUNDS; ++round) {
+  for (int i = 0; i < PIN_COUNT; ++i) {
+    uint64_t tin = k_uptime_ticks();
+    pinned[i] = k_heap_alloc(&my_heap, BLOCK_SIZE * 2, K_NO_WAIT);
+    uint64_t tout = k_uptime_ticks();
+    if (!pinned[i]) {
+      P_TIME("pin", "malloc", BLOCK_SIZE * 2, tin, tout, "NULL");
+      P_FAULT("OOM");
+      goto done;
+    }
+    alloc_cnt++;
+    P_TIME("pin", "malloc", BLOCK_SIZE * 2, tin, tout, "OK");
+  }
+  emit_snapshot("after_pins");
 
+  for (int round = 1; round <= BURST_ROUNDS; ++round) {
     int i;
     for (i = 0; i < BURST_COUNT; ++i) {
       uint64_t tin = k_uptime_ticks();
       buf[i] = k_heap_alloc(&my_heap, BLOCK_SIZE, K_NO_WAIT);
       uint64_t tout = k_uptime_ticks();
-
       if (!buf[i]) {
         P_TIME("burst", "malloc", BLOCK_SIZE, tin, tout, "NULL");
         P_FAULT("OOM");
-        goto done;
+        goto cleanup;
       }
-      ++alloc_cnt;
+      alloc_cnt++;
       P_TIME("burst", "malloc", BLOCK_SIZE, tin, tout, "OK");
     }
-
-    emit_snapshot("after_alloc");
+    emit_snapshot("after_burst_alloc");
 
     for (int j = i - 1; j >= 0; --j) {
       uint64_t tin = k_uptime_ticks();
       k_heap_free(&my_heap, buf[j]);
       uint64_t tout = k_uptime_ticks();
-
-      ++free_cnt;
-      P_TIME("free", "free", BLOCK_SIZE, tin, tout, "OK");
+      free_cnt++;
+      P_TIME("burst", "free", BLOCK_SIZE, tin, tout, "OK");
     }
-
-    emit_snapshot("after_free");
+    emit_snapshot("after_burst_free");
   }
+
+cleanup:
+  for (int i = 0; i < PIN_COUNT; ++i) {
+    uint64_t tin = k_uptime_ticks();
+    k_heap_free(&my_heap, pinned[i]);
+    uint64_t tout = k_uptime_ticks();
+    free_cnt++;
+    P_TIME("cleanup", "free", BLOCK_SIZE * 2, tin, tout, "OK");
+  }
+  emit_snapshot("after_cleanup");
 
 done:
   printk("# %s %s end\n", ALLOCATOR_NAME, TEST_NAME);
+  return 0;
 }

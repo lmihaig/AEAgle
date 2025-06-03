@@ -1,3 +1,5 @@
+#!/bin/bash
+
 make all
 if [ $? -ne 0 ]; then
   echo "Build failed. Aborting."
