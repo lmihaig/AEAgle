@@ -4,7 +4,7 @@
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/sys_heap.h>
 
-#define ALLOCATOR_NAME "ZephyrOS"
+#define ALLOCATOR_NAME "zephyr"
 #define TEST_NAME "DoubleFree"
 #define BLOCK_SIZE 128
 

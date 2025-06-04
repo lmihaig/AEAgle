@@ -1,0 +1,7 @@
+SNAP,baseline,0,0
+TIME,setup,malloc,256,9353,9365,OK,1,0
+SNAP,after_alloc,256,256
+TIME,free,free,256,15084,15092,OK,1,1
+SNAP,after_first_free,0,256
+TIME,doublefree,free,256,20987,25326,BAD_FREE,1,1
+SNAP,after_doublefree,0,256

@@ -10,7 +10,10 @@
 #include <ti/drivers/Board.h>
 #include <ti/drivers/UART2.h>
 
-#define ALLOCATOR_NAME "FreeRTOS-v4"
+#ifndef ALLOCATOR_NAME
+#define ALLOCATOR_NAME "FreeRTOS"
+#endif
+
 #define TEST_NAME "UseAfterFree"
 #define BLOCK_SIZE 128U
 
@@ -30,12 +33,19 @@ static void emit_line(const char *fmt, ...) {
   }
 }
 
+static size_t g_min_free_ever = (size_t)-1;
+
 static void emit_snapshot(const char *phase) {
   size_t free_now = xPortGetFreeHeapSize();
-  size_t min_free = xPortGetMinimumEverFreeHeapSize();
   size_t total = (size_t)configTOTAL_HEAP_SIZE;
+
+  if (free_now < g_min_free_ever) {
+    g_min_free_ever = free_now;
+  }
+
   size_t used_now = total - free_now;
-  size_t used_max = total - min_free;
+  size_t used_max = total - g_min_free_ever;
+
   emit_line("SNAP,%s,%lu,%lu,%lu\r\n", phase, (unsigned long)free_now,
             (unsigned long)used_now, (unsigned long)used_max);
 }

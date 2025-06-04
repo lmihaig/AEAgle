@@ -4,12 +4,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define ALLOCATOR_NAME "RIOT_TLSF"
+#define ALLOCATOR_NAME "riot-tlsf"
 #define TEST_NAME "LeakExhaust"
 #define HEAP_SIZE 65536
 #define ALLOC_SIZE 128
 
-int main(void) {
+int main(void)
+{
   malloc_monitor_reset_high_watermark();
 
   printf("\r\n");
@@ -25,12 +26,14 @@ int main(void) {
          (unsigned)before_high);
   fflush(stdout);
 
-  while (1) {
+  while (1)
+  {
     uint32_t t1 = ztimer_now(ZTIMER_USEC);
     void *p = malloc(ALLOC_SIZE);
     uint32_t t2 = ztimer_now(ZTIMER_USEC);
 
-    if (!p) {
+    if (!p)
+    {
       printf("EXHAUSTED,alloc_cnt=%lu,free_cnt=%lu\r\n", alloc_cnt, free_cnt);
       fflush(stdout);
       break;

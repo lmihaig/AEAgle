@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+
+make clean BOARD=cc1352-launchpad
+
 export OPENOCD_SCRIPTS=/usr/share/openocd/scripts
 export PROGRAMMER=openocd
 export OPENOCD_CONFIG=board/ti_cc13x2_launchpad.cfg

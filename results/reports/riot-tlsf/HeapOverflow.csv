@@ -1,0 +1,11 @@
+SNAP,baseline,0,0
+TIME,overflow,malloc,64,9527,9539,OK,1,0
+SNAP,after_alloc_A,64,64
+TIME,overflow,malloc,64,15431,15443,OK,2,0
+SNAP,after_alloc_B,128,128
+TIME,overflow,write,68,21682,21684,OK,2,0
+SNAP,after_write,128,128
+TIME,overflow,free,64,27673,27681,BAD_FREE,2,0
+SNAP,after_fakefree,64,128
+TIME,cleanup,free,64,34271,34280,OK,2,1
+SNAP,after_cleanup,0,128

@@ -5,7 +5,7 @@
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/sys_heap.h>
 
-#define ALLOCATOR_NAME "ZephyrOS"
+#define ALLOCATOR_NAME "zephyr"
 #define TEST_NAME "HeapOverflow"
 #define BLOCK_SIZE 128
 
@@ -15,25 +15,27 @@ static uint32_t alloc_cnt, free_cnt;
 
 #define P_META() printk("META,tick_hz,%u\n", CONFIG_SYS_CLOCK_TICKS_PER_SEC)
 
-#define P_TIME(ph, op, sz, ti, to, res)                                        \
-  printk("TIME,%s,%s,%u,%" PRIu64 ",%" PRIu64 ",%s,%u,%u\n", ph, op,           \
-         (unsigned)(sz), (uint64_t)(ti), (uint64_t)(to), res, alloc_cnt,       \
+#define P_TIME(ph, op, sz, ti, to, res)                                  \
+  printk("TIME,%s,%s,%u,%" PRIu64 ",%" PRIu64 ",%s,%u,%u\n", ph, op,     \
+         (unsigned)(sz), (uint64_t)(ti), (uint64_t)(to), res, alloc_cnt, \
          free_cnt)
 
-#define P_SNAP(ph, st)                                                         \
-  printk("SNAP,%s,%zu,%zu,%zu\n", ph, (size_t)(st).free_bytes,                 \
+#define P_SNAP(ph, st)                                         \
+  printk("SNAP,%s,%zu,%zu,%zu\n", ph, (size_t)(st).free_bytes, \
          (size_t)(st).allocated_bytes, (size_t)(st).max_allocated_bytes)
 
-#define P_FAULT(res)                                                           \
+#define P_FAULT(res) \
   printk("FAULT,%" PRIu64 ",0xDEAD,%s\n", (uint64_t)k_uptime_ticks(), res)
 
-static void emit_snapshot(const char *phase) {
+static void emit_snapshot(const char *phase)
+{
   struct sys_memory_stats st;
   sys_heap_runtime_stats_get(&my_heap.heap, &st);
   P_SNAP(phase, st);
 }
 
-int main(void) {
+int main(void)
+{
   void *A, *B;
   char *overflow_ptr;
 
@@ -45,7 +47,8 @@ int main(void) {
     A = k_heap_alloc(&my_heap, BLOCK_SIZE, K_NO_WAIT);
     uint64_t tout = k_uptime_ticks();
 
-    if (!A) {
+    if (!A)
+    {
       P_TIME("allocA", "malloc", BLOCK_SIZE, tin, tout, "NULL");
       P_FAULT("OOM");
       goto done;
@@ -59,7 +62,8 @@ int main(void) {
     B = k_heap_alloc(&my_heap, BLOCK_SIZE, K_NO_WAIT);
     uint64_t tout = k_uptime_ticks();
 
-    if (!B) {
+    if (!B)
+    {
       P_TIME("allocB", "malloc", BLOCK_SIZE, tin, tout, "NULL");
       P_FAULT("OOM");
       goto freeA;
@@ -84,10 +88,13 @@ int main(void) {
     void *C = k_heap_alloc(&my_heap, BLOCK_SIZE, K_NO_WAIT);
     uint64_t tout = k_uptime_ticks();
 
-    if (!C) {
+    if (!C)
+    {
       P_TIME("allocC", "malloc", BLOCK_SIZE, tin, tout, "NULL");
       P_FAULT("OOM/CORRUPT");
-    } else {
+    }
+    else
+    {
       alloc_cnt++;
       P_TIME("allocC", "malloc", BLOCK_SIZE, tin, tout, "OK?");
       /* Free C if it succeeded */

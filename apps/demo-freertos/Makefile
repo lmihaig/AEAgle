@@ -18,6 +18,7 @@ OBJCOPY      := /home/lmg/ti/gcc-arm-none-eabi_9_3_1/bin/arm-none-eabi-objcopy
 # User‐selectable heap implementation: 1, 2, 3, 4, or 5.
 # Defaults to 4 (heap_4.c) if HEAP_IMPL is not set externally.
 HEAP_IMPL    ?= 4
+ALLOCATOR_NAME := \"freertosv$(HEAP_IMPL)\"
 
 #------------------------------------------------------------------------------
 # 2) Output Filenames
@@ -31,7 +32,9 @@ MAP          := $(BUILD_DIR)/demo-freertos.map
 #------------------------------------------------------------------------------
 CPUFLAGS     := -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard
 DEFS         := -DDeviceFamily_CC13X2
-CFLAGS       := $(CPUFLAGS) -Os -g3 -ffunction-sections -fdata-sections -std=c11 $(DEFS)
+CFLAGS       := $(CPUFLAGS) -Os -g3 -ffunction-sections -fdata-sections -std=c11 $(DEFS) -DALLOCATOR_NAME=$(ALLOCATOR_NAME)
+
+
 
 LDFLAGS      := \
   -T$(CURDIR)/cc13x2_cc26x2_freertos.lds \
@@ -89,16 +92,9 @@ all: $(HEX)
 $(BUILD_DIR):
 	mkdir -p $@
 
-# 8) Step 1: Run SysConfig CLI if needed
-$(BUILD_DIR)/ti_freertos_config.c: demo-freertos.syscfg | $(BUILD_DIR)
-	@echo "=== [1/2] Running SysConfig (heap=$(HEAP_IMPL)) ==="
-	$(SYS_CFG) --script $< --compiler gcc \
-	  -s $(SDK_DIR)/.metadata/product.json \
-	  --output $(BUILD_DIR)
-
-# 9) Step 2: ALWAYS patch out any heap_[0-9].c → heap_$(HEAP_IMPL).c
+# 8)  ALWAYS patch out any heap_[0-9].c → heap_$(HEAP_IMPL).c
 $(BUILD_DIR)/ti_freertos_config.c: FORCE
-	@echo "=== [2/2] Patching any heap_X.c → heap_$(HEAP_IMPL).c ==="
+	@echo "===  Patching any heap_X.c → heap_$(HEAP_IMPL).c ==="
 	@sed -i \
 	  's@\(#include[[:space:]]*<\)\([^>]*heap_[0-9]\+\.c\)\(>\)@\1../portable/MemMang/heap_$(HEAP_IMPL).c\3@' \
 	  $(BUILD_DIR)/ti_freertos_config.c || true

@@ -4,14 +4,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define ALLOCATOR_NAME "RIOT_MEMA"
+#define ALLOCATOR_NAME "riot-mema"
 #define TEST_NAME "LeakExhaust"
 #define NUM_BLOCKS 32
 
 static uint8_t pool_data[NUM_BLOCKS * 128];
 static memarray_t pool;
 
-int main(void) {
+int main(void)
+{
   memarray_init(&pool, pool_data, 128, NUM_BLOCKS);
 
   printf("\r\n");
@@ -29,12 +30,14 @@ int main(void) {
 
   void *arr[NUM_BLOCKS + 1];
 
-  while (1) {
+  while (1)
+  {
     uint32_t t1 = ztimer_now(ZTIMER_USEC);
     void *p = memarray_alloc(&pool);
     uint32_t t2 = ztimer_now(ZTIMER_USEC);
 
-    if (!p) {
+    if (!p)
+    {
       printf("EXHAUSTED,alloc_cnt=%lu,free_cnt=%lu\r\n", alloc_cnt, free_cnt);
       fflush(stdout);
       break;
@@ -52,7 +55,8 @@ int main(void) {
     fflush(stdout);
   }
 
-  for (uint32_t i = 0; i < alloc_cnt; i++) {
+  for (uint32_t i = 0; i < alloc_cnt; i++)
+  {
     memarray_free(&pool, arr[i]);
     free_cnt++;
   }

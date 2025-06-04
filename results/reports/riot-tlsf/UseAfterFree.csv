@@ -1,0 +1,12 @@
+SNAP,baseline,0,0
+TIME,uaf,malloc,64,9526,9538,OK,1,0
+SNAP,after_alloc,64,64
+TIME,uaf,free,64,14822,14831,OK,1,1
+SNAP,after_free,0,64
+TIME,uaf,write,64,19945,19962,OK,1,1
+SNAP,after_uaf_write,0,64
+TIME,uaf,malloc,64,25588,25598,OK,2,1
+LEAK,0x20001218
+SNAP,after_realloc,64,64
+TIME,cleanup,free,64,32708,32717,OK,2,2
+SNAP,after_cleanup,0,64

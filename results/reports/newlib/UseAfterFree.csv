@@ -1,0 +1,10 @@
+META,tick_hz,32768
+TIME,alloc1,malloc,128,305,306,OK,1,0
+SNAP,after_alloc1,1784,136,136
+TIME,free1,free,128,511,512,OK,1,1
+SNAP,after_free1,1920,0,136
+TIME,uaf,memset,128,701,701,DONE,1,1
+TIME,alloc2,malloc,128,811,811,OK,2,1
+SNAP,after_alloc2,1784,136,136
+TIME,inspect,check,128,1017,1017,LEAKED,2,1
+SNAP,after_cleanup,1920,0,136

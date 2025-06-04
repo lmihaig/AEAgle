@@ -7,23 +7,32 @@ install zephyr sdk
 pip install west
 
 west init ./zephyrproject
+
 cd zephyrproject
+
 west update
+
 west zephyr-export
+
 west packages pip --install
 
 cd zephyrproject/zephyr
+
 west sdk install
 
 ## RiotOS
 
 git clone <https://github.com/RIOT-OS/RIOT.git>
 
-set -gx OPENOCD_SCRIPTS /usr/share/openocd/scripts      # where *.cfg trees live
-set -gx PROGRAMMER      openocd                         # override default 'uniflash'
-set -gx OPENOCD_CONFIG  board/ti_cc13x2_launchpad.cfg   # board file inside $OPENOCD_SCRIPTS
+```
+
+set -gx OPENOCD_SCRIPTS /usr/share/openocd/scripts
+set -gx PROGRAMMER      openocd
+set -gx OPENOCD_CONFIG  board/ti_cc13x2_launchpad.cfg  
+```
 
 (in an example/)
+
 make flash BOARD=cc1352-launchpad
 
 ## FreeRTOS
@@ -31,6 +40,7 @@ make flash BOARD=cc1352-launchpad
 git clone <git@github.com>:FreeRTOS/FreeRTOS.git --recurse-submodules
 
 install Code Composer Studio™ integrated development environment (IDE)
+
 install SIMPLELINK-LOWPOWER-F2-SDK
 
 ????

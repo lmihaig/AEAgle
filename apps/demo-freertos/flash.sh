@@ -1,6 +1,15 @@
 #!/bin/bash
 
-make all
+set -e
+
+make clean
+
+/home/lmg/ti/sysconfig_1.21.1/sysconfig_cli.sh --script demo-freertos.syscfg \
+  --compiler gcc \
+  -s ~/ti/simplelink_cc13xx_cc26xx_sdk_8_30_01_01/.metadata/product.json \
+  --output build/
+
+make all HEAP_IMPL="${HEAP_IMPL}"
 if [ $? -ne 0 ]; then
   echo "Build failed. Aborting."
   exit 1
