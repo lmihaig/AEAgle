@@ -1,0 +1,9 @@
+SNAP,baseline,32,0
+TIME,overflow,alloc,64,9616,9618,OK,1,0
+SNAP,after_alloc_A,31,1
+TIME,overflow,alloc,64,15346,15348,OK,2,0
+SNAP,after_alloc_B,30,2
+TIME,overflow,write,68,21250,21268,OK,2,0
+SNAP,after_write,30,2
+TIME,overflow,free,64,26980,26982,BAD_FREE,2,0
+SNAP,after_badfree*** RIOT kernel panic:

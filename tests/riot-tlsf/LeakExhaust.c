@@ -8,6 +8,7 @@
 #define TEST_NAME "LeakExhaust"
 #define HEAP_SIZE 65536
 #define ALLOC_SIZE 128
+#define TICK_HZ 1000000
 
 int main(void)
 {
@@ -15,6 +16,8 @@ int main(void)
 
   printf("\r\n");
   printf("# %s %s start\r\n", ALLOCATOR_NAME, TEST_NAME);
+  printf("META,TICK_HZ,%u\r\n", TICK_HZ);
+
   fflush(stdout);
 
   uint32_t alloc_cnt = 0;

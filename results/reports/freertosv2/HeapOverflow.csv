@@ -1,0 +1,8 @@
+META,tick_hz,1000
+TIME,allocA,malloc,128,4,4,OK,1,0
+TIME,allocB,malloc,128,7,8,OK,2,0
+SNAP,after_allocs,29232,3536,3536
+TIME,overflow,memset,136,14,14,DONE,2,0
+TIME,allocC,malloc,128,18,18,OK?,3,0
+SNAP,after_test,29232,3536,3536
+SNAP,after_cleanup,29520,3248,3536

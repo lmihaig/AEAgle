@@ -1,0 +1,7 @@
+META,tick_hz,1000
+TIME,setup,malloc,128,4,4,OK,1,0
+SNAP,after_alloc,29376,3392,3392
+TIME,free1,free,128,10,10,OK,1,1
+SNAP,after_free1,29520,3248,3392
+TIME,free2,free,128,16,16,dblfree,1,2
+SNAP,after_free2,29520,3248,3392

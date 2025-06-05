@@ -1,0 +1,4 @@
+META,tick_hz,128
+TIME,setup,malloc,128,50,50,OK,1,0
+TIME,free1,free,128,51,51,OK,1,1
+TIME,free2,free,128,52,52,dblfree,1,2

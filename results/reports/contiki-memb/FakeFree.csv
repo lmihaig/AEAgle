@@ -1,0 +1,4 @@
+META,tick_hz,128
+TIME,setup,malloc,128,50,50,OK,1,0
+TIME,fakefree,free,64,51,51,BAD_FREE,1,1
+TIME,cleanup,free,128,52,52,OK,1,2

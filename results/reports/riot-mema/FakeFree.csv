@@ -1,0 +1,7 @@
+SNAP,baseline,32,0
+TIME,setup,alloc,128,9266,9268,OK,1,0
+SNAP,after_alloc,31,1
+TIME,fakefree,free,16,14649,14651,BAD_FREE,1,0
+SNAP,after_fakefree,32,0
+TIME,cleanup,free,128,21074,21076,OK,1,1
+SNAP,after_cleanup,33,4294967295

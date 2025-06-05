@@ -38,6 +38,11 @@
 /* ======== Kernel Configuration ======== */
 system.getScript("kernel_config_release.syscfg.js");
 
+
+const FreeRTOS = scripting.addModule("/freertos/FreeRTOS");
+FreeRTOS.heapSize = 0x00010000;
+
+
 /* ======== GPIO ======== */
 var GPIO = scripting.addModule("/ti/drivers/GPIO");
 var gpio = GPIO.addInstance();

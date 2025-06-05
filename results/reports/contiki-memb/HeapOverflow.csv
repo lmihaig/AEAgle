@@ -1,0 +1,5 @@
+META,tick_hz,128
+TIME,allocA,malloc,128,50,50,OK,1,0
+TIME,allocB,malloc,128,51,51,OK,2,0
+TIME,overflow,memset,136,52,52,DONE,2,0
+TIME,allocC,malloc,128,53,53,OK?,3,0

@@ -54,26 +54,26 @@ int main(void)
        free(ptr);
        uint32_t t4 = ztimer_now(ZTIMER_USEC);
        free_cnt++;
-       printf("TIME,free,free,%u,%u,%u,OK,%lu,%lu\r\n", (unsigned)BLOCK_SIZE,
+       printf("TIME,free1,free,%u,%u,%u,OK,%lu,%lu\r\n", (unsigned)BLOCK_SIZE,
               (unsigned)t3, (unsigned)t4, alloc_cnt, free_cnt);
        fflush(stdout);
 
        size_t after_first_free_cur = malloc_monitor_get_usage_current();
        size_t after_first_free_high = malloc_monitor_get_usage_high_watermark();
-       printf("SNAP,after_first_free,%u,%u\r\n", (unsigned)after_first_free_cur,
+       printf("SNAP,after_free1,%u,%u\r\n", (unsigned)after_first_free_cur,
               (unsigned)after_first_free_high);
        fflush(stdout);
 
        uint32_t t5 = ztimer_now(ZTIMER_USEC);
        free(ptr);
        uint32_t t6 = ztimer_now(ZTIMER_USEC);
-       printf("TIME,doublefree,free,%u,%u,%u,BAD_FREE,%lu,%lu\r\n",
+       printf("TIME,free2,free,%u,%u,%u,BAD_FREE,%lu,%lu\r\n",
               (unsigned)BLOCK_SIZE, (unsigned)t5, (unsigned)t6, alloc_cnt, free_cnt);
        fflush(stdout);
 
        size_t after_doublefree_cur = malloc_monitor_get_usage_current();
        size_t after_doublefree_high = malloc_monitor_get_usage_high_watermark();
-       printf("SNAP,after_doublefree,%u,%u\r\n", (unsigned)after_doublefree_cur,
+       printf("SNAP,after_free2,%u,%u\r\n", (unsigned)after_doublefree_cur,
               (unsigned)after_doublefree_high);
        fflush(stdout);
 

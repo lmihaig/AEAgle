@@ -1,0 +1,7 @@
+META,tick_hz,128
+TIME,alloc1,malloc,128,49,49,OK,1,0
+TIME,free1,free,128,50,50,OK,1,1
+TIME,uaf,memset,128,51,51,DONE,1,1
+TIME,alloc2,malloc,128,52,52,OK,2,1
+TIME,inspect,check,128,53,53,LEAKED,2,1
+TIME,cleanup,free,128,54,54,OK,2,2
