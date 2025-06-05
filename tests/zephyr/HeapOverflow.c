@@ -36,81 +36,92 @@ static void emit_snapshot(const char *phase)
 
 int main(void)
 {
-  void *A, *B;
+  void *A = NULL;
+  void *B = NULL;
+  void *C = NULL;
   char *overflow_ptr;
+  uint64_t tin, tout;
 
   printk("# %s %s start\n", ALLOCATOR_NAME, TEST_NAME);
   P_META();
 
+  tin = k_uptime_ticks();
+  A = k_heap_alloc(&my_heap, BLOCK_SIZE, K_NO_WAIT);
+  tout = k_uptime_ticks();
+
+  if (!A)
   {
-    uint64_t tin = k_uptime_ticks();
-    A = k_heap_alloc(&my_heap, BLOCK_SIZE, K_NO_WAIT);
-    uint64_t tout = k_uptime_ticks();
-
-    if (!A)
-    {
-      P_TIME("allocA", "malloc", BLOCK_SIZE, tin, tout, "NULL");
-      P_FAULT("OOM");
-      goto done;
-    }
-    alloc_cnt++;
-    P_TIME("allocA", "malloc", BLOCK_SIZE, tin, tout, "OK");
+    P_TIME("setup", "malloc", BLOCK_SIZE, tin, tout, "NULL");
+    P_FAULT("OOM");
+    goto done;
   }
+  alloc_cnt++;
+  P_TIME("setup", "malloc", BLOCK_SIZE, tin, tout, "OK");
 
+  tin = k_uptime_ticks();
+  B = k_heap_alloc(&my_heap, BLOCK_SIZE, K_NO_WAIT);
+  tout = k_uptime_ticks();
+
+  if (!B)
   {
-    uint64_t tin = k_uptime_ticks();
-    B = k_heap_alloc(&my_heap, BLOCK_SIZE, K_NO_WAIT);
-    uint64_t tout = k_uptime_ticks();
-
-    if (!B)
-    {
-      P_TIME("allocB", "malloc", BLOCK_SIZE, tin, tout, "NULL");
-      P_FAULT("OOM");
-      goto freeA;
-    }
-    alloc_cnt++;
-    P_TIME("allocB", "malloc", BLOCK_SIZE, tin, tout, "OK");
+    P_TIME("setup", "malloc", BLOCK_SIZE, tin, tout, "NULL");
+    P_FAULT("OOM");
+    goto cleanup_A;
   }
+  alloc_cnt++;
+  P_TIME("setup", "malloc", BLOCK_SIZE, tin, tout, "OK");
 
-  emit_snapshot("after_allocs");
+  emit_snapshot("after_setup");
 
   overflow_ptr = (char *)A;
-  {
-    uint64_t tin = k_uptime_ticks();
-    memset(overflow_ptr, 0xFF, BLOCK_SIZE + 8);
-    uint64_t tout = k_uptime_ticks();
+  tin = k_uptime_ticks();
+  memset(overflow_ptr, 0xFF, BLOCK_SIZE + 8);
+  tout = k_uptime_ticks();
+  P_TIME("hof_write", "memset_overflow", BLOCK_SIZE + 8, tin, tout, "HOF_WRITE_DONE");
 
-    P_TIME("overflow", "memset", BLOCK_SIZE + 8, tin, tout, "DONE");
+  emit_snapshot("post_primitive_trigger");
+
+  tin = k_uptime_ticks();
+  C = k_heap_alloc(&my_heap, BLOCK_SIZE, K_NO_WAIT);
+  tout = k_uptime_ticks();
+
+  if (!C)
+  {
+    P_TIME("hof_check_alloc", "malloc", BLOCK_SIZE, tin, tout, "NULL");
+    P_FAULT("OOM");
+  }
+  else
+  {
+    alloc_cnt++;
+    P_TIME("hof_check_alloc", "malloc", BLOCK_SIZE, tin, tout, "OK");
+    tin = k_uptime_ticks();
+    k_heap_free(&my_heap, C);
+    tout = k_uptime_ticks();
+    free_cnt++;
+    P_TIME("cleanup", "free", BLOCK_SIZE, tin, tout, "OK");
   }
 
-  {
-    uint64_t tin = k_uptime_ticks();
-    void *C = k_heap_alloc(&my_heap, BLOCK_SIZE, K_NO_WAIT);
-    uint64_t tout = k_uptime_ticks();
+  emit_snapshot("after_hof_check_alloc");
 
-    if (!C)
-    {
-      P_TIME("allocC", "malloc", BLOCK_SIZE, tin, tout, "NULL");
-      P_FAULT("OOM/CORRUPT");
-    }
-    else
-    {
-      alloc_cnt++;
-      P_TIME("allocC", "malloc", BLOCK_SIZE, tin, tout, "OK?");
-      /* Free C if it succeeded */
-      k_heap_free(&my_heap, C);
-      free_cnt++;
-    }
+  if (B)
+  {
+    tin = k_uptime_ticks();
+    k_heap_free(&my_heap, B);
+    tout = k_uptime_ticks();
+    free_cnt++;
+    P_TIME("cleanup", "free", BLOCK_SIZE, tin, tout, "OK");
   }
 
-  emit_snapshot("after_test");
-
-  k_heap_free(&my_heap, B);
-  free_cnt++;
-freeA:
-  k_heap_free(&my_heap, A);
-  free_cnt++;
-  emit_snapshot("after_cleanup");
+cleanup_A:
+  if (A)
+  {
+    tin = k_uptime_ticks();
+    k_heap_free(&my_heap, A);
+    tout = k_uptime_ticks();
+    free_cnt++;
+    P_TIME("cleanup", "free", BLOCK_SIZE, tin, tout, "OK");
+  }
+  emit_snapshot("post_cleanup");
 
 done:
   printk("# %s %s end\n", ALLOCATOR_NAME, TEST_NAME);

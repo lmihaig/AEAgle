@@ -3,6 +3,7 @@
 #include <zephyr/sys/mem_stats.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/sys_heap.h>
+#include <stdio.h> // Required for snprintf
 
 #define ALLOCATOR_NAME "zephyr"
 #define TEST_NAME "MixedLifetime"
@@ -40,6 +41,7 @@ int main(void)
 {
   void *pinned[PIN_COUNT];
   void *buf[BURST_COUNT];
+  char snap_phase_label[64]; // Buffer for dynamic snapshot phase names
 
   printk("# %s %s start\n", ALLOCATOR_NAME, TEST_NAME);
   P_META();
@@ -53,6 +55,16 @@ int main(void)
     {
       P_TIME("pin", "malloc", BLOCK_SIZE * 2, tin, tout, "NULL");
       P_FAULT("OOM");
+      // Attempt to free any already pinned blocks if OOM occurs here
+      for (int k = 0; k < i; ++k)
+      {
+        if (pinned[k])
+        {
+          // Not logging these frees as it's an exceptional path before full setup
+          k_heap_free(&my_heap, pinned[k]);
+          // free_cnt++; // decide if this is a "successful free" in this context
+        }
+      }
       goto done;
     }
     alloc_cnt++;
@@ -72,12 +84,14 @@ int main(void)
       {
         P_TIME("burst", "malloc", BLOCK_SIZE, tin, tout, "NULL");
         P_FAULT("OOM");
+        // Note: Potential leak here of buf[0] to buf[i-1] from this round
         goto cleanup;
       }
       alloc_cnt++;
       P_TIME("burst", "malloc", BLOCK_SIZE, tin, tout, "OK");
     }
-    emit_snapshot("after_burst_alloc");
+    snprintf(snap_phase_label, sizeof(snap_phase_label), "after_burst_alloc_%d", round);
+    emit_snapshot(snap_phase_label);
 
     for (int j = i - 1; j >= 0; --j)
     {
@@ -87,19 +101,23 @@ int main(void)
       free_cnt++;
       P_TIME("burst", "free", BLOCK_SIZE, tin, tout, "OK");
     }
-    emit_snapshot("after_burst_free");
+    snprintf(snap_phase_label, sizeof(snap_phase_label), "after_burst_free_%d", round);
+    emit_snapshot(snap_phase_label);
   }
 
 cleanup:
   for (int i = 0; i < PIN_COUNT; ++i)
   {
-    uint64_t tin = k_uptime_ticks();
-    k_heap_free(&my_heap, pinned[i]);
-    uint64_t tout = k_uptime_ticks();
-    free_cnt++;
-    P_TIME("cleanup", "free", BLOCK_SIZE * 2, tin, tout, "OK");
+    if (pinned[i]) // Ensure pointer is valid before freeing
+    {
+      uint64_t tin = k_uptime_ticks();
+      k_heap_free(&my_heap, pinned[i]);
+      uint64_t tout = k_uptime_ticks();
+      free_cnt++;
+      P_TIME("cleanup", "free", BLOCK_SIZE * 2, tin, tout, "OK");
+    }
   }
-  emit_snapshot("after_cleanup");
+  emit_snapshot("post_cleanup");
 
 done:
   printk("# %s %s end\n", ALLOCATOR_NAME, TEST_NAME);

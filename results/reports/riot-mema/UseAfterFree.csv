@@ -1,6 +1,7 @@
-SNAP,baseline,32,0
-TIME,uaf,alloc,64,9613,9616,OK,1,0
-SNAP,after_alloc,31,1
-TIME,uaf,free,64,14736,14738,OK,1,1
-SNAP,after_free,32,0
-TIME,uaf,write,64,19858,19875,OK,1,1
+META,tick_hz,1000000
+SNAP,baseline,2048,0,0
+TIME,setup,malloc,64,11871,11873,OK,1,0
+SNAP,after_setup,1984,64,64
+TIME,setup,free,64,17978,17980,OK,1,1
+SNAP,after_free1,2048,0,64
+TIME,uaf_write,memset_uaf,64,23821,23838,UAF_WRITE_DONE,1,1

@@ -1,5 +1,5 @@
 META,tick_hz,32768
 TIME,setup,malloc,128,299,299,OK,1,0
-SNAP,after_alloc,1784,136,136
-TIME,free1,free,128,500,500,OK,1,1
-SNAP,after_free1,1920,0,136
+SNAP,after_setup,1784,136,136
+TIME,setup,free,128,499,500,OK,1,1
+SNAP,after_first_free,1920,0,136

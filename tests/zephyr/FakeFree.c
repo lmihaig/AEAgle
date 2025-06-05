@@ -57,7 +57,7 @@ int main(void)
     alloc_cnt++;
     P_TIME("setup", "malloc", BLOCK_SIZE, tin, tout, "OK");
   }
-  emit_snapshot("after_alloc");
+  emit_snapshot("after_setup");
 
   p_offset = (uint8_t *)p + OFFSET;
   {
@@ -65,11 +65,10 @@ int main(void)
     k_heap_free(&my_heap, p_offset);
     uint64_t tout = k_uptime_ticks();
 
-    free_cnt++;
-    P_TIME("fakefree", "free", (uint32_t)OFFSET, tin, tout, "BAD_FREE");
+    P_TIME("ff_trigger", "free", BLOCK_SIZE, tin, tout, "FF_ATTEMPT");
   }
 
-  emit_snapshot("after_fakefree");
+  emit_snapshot("post_primitive_trigger");
 
   {
     uint64_t tin = k_uptime_ticks();
@@ -77,9 +76,9 @@ int main(void)
     uint64_t tout = k_uptime_ticks();
 
     free_cnt++;
-    P_TIME("cleanup", "free", BLOCK_SIZE, tin, tout, "OK?");
+    P_TIME("cleanup", "free", BLOCK_SIZE, tin, tout, "OK");
   }
-  emit_snapshot("after_cleanup");
+  emit_snapshot("post_cleanup");
 
 done:
   printk("# %s %s end\n", ALLOCATOR_NAME, TEST_NAME);

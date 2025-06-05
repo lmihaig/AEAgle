@@ -6,3 +6,5 @@ bin/
 build/
 
 info.txt
+
+.vscode

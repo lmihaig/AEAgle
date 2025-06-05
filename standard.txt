@@ -1,0 +1,181 @@
+AEAGLE PROJECT LOGGING STANDARD
+
+This document outlines the standardized logging format for the AEAgle project,
+covering embedded memory allocator tests.
+
+-------------------------------------------------------------------------------
+I. LOG LINE DEFINITIONS
+-------------------------------------------------------------------------------
+
+All log lines begin with a keyword, followed by comma-separated fields.
+
+A. META
+   Purpose: Report global context at test start. 
+   Format:  META,tick_hz,<ticks_per_second>
+   Fields:
+     - tick_hz: Constant literal "tick_hz".
+     - <ticks_per_second>: Number of timer ticks per second. 
+
+B. TIME
+   Purpose: Record a single allocation, deallocation, or critical test
+            operation, including its timing and result. 
+   Format:  TIME,<phase>,<operation>,<size>,<t_in>,<t_out>,<result>,<alloc_cnt>,<free_cnt>
+   Fields:
+     - <phase>: Context label identifying the test section. 
+       Possible values:
+         - setup             (General test setup allocations/actions)
+         - cleanup           (General test cleanup frees)
+         - pin               (Pinned allocations in MixedLifetime) 
+         - burst             (Burst alloc/free cycles in MixedLifetime) 
+         - leakloop          (Allocations in Leak & Exhaust loop)
+         - df_trigger        (The second free in DoubleFree test)
+         - ff_trigger        (The free(ptr+offset) in FakeFree test)
+         - uaf_write         (The memset to freed block in UAF test)
+         - uaf_realloc       (The malloc after UAF write)
+         - uaf_inspect       (The check for leaked data in UAF test)
+         - hof_write         (The memset causing overflow in HeapOverflow)
+         - hof_check_alloc   (Allocation attempt after HeapOverflow)
+
+     - <operation>: Name of the timed operation. 
+       Possible values:
+         - malloc            (Memory allocation) 
+         - free              (Memory deallocation) 
+         - memset_uaf        (Write to freed block in UAF test)
+         - memset_overflow   (Write causing heap overflow)
+         - inspect_uaf       (Check for data leak in UAF test)
+
+     - <size>: Byte size requested (malloc) or block size (free, memset). 
+               For inspect_uaf, can be 0 if size is implicit.
+     - <t_in>: Timestamp before calling the operation (in ticks). 
+     - <t_out>: Timestamp after returning from the operation (in ticks). 
+     - <result>: Outcome of the operation. 
+       Possible values:
+         - OK                (Successful malloc or free) 
+         - NULL              (Failed malloc, returned NULL) 
+         - DF_ATTEMPT        (For the second free in DoubleFree)
+         - FF_ATTEMPT        (For the fake free attempt)
+         - UAF_WRITE_DONE    (For the memset in UAF_WRITE phase)
+         - HOF_WRITE_DONE    (For the memset in HOF_WRITE phase)
+         - LEAK_DETECTED     (UAF inspect found leaked data)
+         - NO_LEAK_DETECTED  (UAF inspect found no leaked data)
+         - BAD_FREE          (Used if an invalid free was attempted and detected by the allocator itself, though DF_ATTEMPT/FF_ATTEMPT are preferred for test-level logging) 
+
+     - <alloc_cnt>: Cumulative count of successful malloc calls. 
+     - <free_cnt>: Cumulative count of successful free calls. 
+
+C. SNAP
+   Purpose: Capture a snapshot of heap usage. 
+   Format:  SNAP,<phase>,<free_bytes>,<allocated_bytes>,<max_allocated_bytes>
+   Fields:
+     - <phase>: Label for when the snapshot is taken. 
+       Possible values:
+         - baseline                       (At very start of a test) 
+         - after_setup                    (After initial test setup allocations)
+         - after_pins                     (MixedLifetime: after pin allocations) 
+         - after_burst_alloc_X            (MixedLifetime: after burst alloc round X) 
+         - after_burst_free_X             (MixedLifetime: after burst free round X) 
+         - after_first_free               (DoubleFree: after the first free)
+         - pre_primitive_trigger          (Optional: just before a primitive is triggered)
+         - post_primitive_trigger         (After a primitive operation, e.g., df_trigger, ff_trigger, uaf_write, hof_write)
+         - post_primitive_realloc         (UAF/HOF: after allocation attempt post-primitive)
+         - after_leakloop_exhaustion      (LeakExhaust: after malloc loop ends)
+         - pre_cleanup                    (Optional: before starting cleanup phase)
+         - post_cleanup                   (After cleanup phase) 
+
+     - <free_bytes>: Current total free heap bytes. 
+     - <allocated_bytes>: Current total allocated heap bytes. 
+     - <max_allocated_bytes>: Maximum total allocated bytes reached.  (Note: original info.txt says "max bytes any single allocation reached", but example implies total. Sticking to total as per example.)
+
+D. FAULT
+   Purpose: Indicate critical errors or fault conditions. 
+   Format:  FAULT,<tick>,0xDEAD,<error_code>
+   Fields:
+     - <tick>: Time of fault (in ticks). 
+     - 0xDEAD: Fixed marker. 
+     - <error_code>: Text describing the fault. 
+       Possible values:
+         - OOM                        (Out Of Memory from malloc returning NULL) 
+         - DF_DETECTED                (Allocator/wrapper detected double-free)
+         - FF_DETECTED                (Allocator/wrapper detected fake-free)
+         - UAF_CRASH                  (Crash during UAF test stages)
+         - HOF_CRASH                  (Crash during HeapOverflow test stages)
+         - DF_CRASH                   (Crash during DoubleFree test stages)
+         - FF_CRASH                   (Crash during FakeFree test stages)
+         - CORRUPTION_DETECTED        (Heap consistency check failed)
+         - GENERAL_CRASH              (Other crashes where context is less specific)
+         - OC                         (Overlap detected, if applicable as a fault) 
+
+E. LEAK / NOLEAK (Primarily for Use-After-Free)
+   Purpose: Indicate if a data leak was detected after a UAF write. 
+   Format:  LEAK,<address>
+            NOLEAK,<address>
+   Fields:
+     - <address>: Pointer value returned by malloc after a UAF write,
+                  which was then inspected. 
+
+-------------------------------------------------------------------------------
+II. TEST-SPECIFIC LOGGING ORDER SUMMARIES
+-------------------------------------------------------------------------------
+
+(Optional SNAP lines can be inserted at meaningful points in any test.)
+
+1. Leak & Exhaust Test (Workload W2) 
+   META
+   Loop: TIME (phase:leakloop, op:malloc, res:OK)
+   EndLoop: TIME (phase:leakloop, op:malloc, res:NULL)
+   FAULT (error:OOM)
+   SNAP (phase:after_leakloop_exhaustion)
+
+2. Mixed Lifetime Test (Workload W3) 
+   META
+   TIME (phase:pin, op:malloc, res:OK) ...for each pinned block
+   SNAP (phase:after_pins)
+   Loop (Burst Rounds X):
+     TIME (phase:burst, op:malloc, res:OK) ...for each burst alloc
+     SNAP (phase:after_burst_alloc_X)
+     TIME (phase:burst, op:free, res:OK) ...for each burst free
+     SNAP (phase:after_burst_free_X)
+   EndLoop
+   TIME (phase:cleanup, op:free, res:OK) ...for each pinned block
+   SNAP (phase:post_cleanup)
+
+3. Double Free Test (Workload W4) 
+   META
+   TIME (phase:setup, op:malloc, res:OK)
+   TIME (phase:setup, op:free, res:OK)       (first free)
+   TIME (phase:df_trigger, op:free, res:DF_ATTEMPT) (second free)
+   [FAULT (error:DF_DETECTED_OR_CRASH_CODE)] (if applicable)
+   SNAP (phase:post_primitive_trigger)
+
+4. Fake Free Test (Workload W5) 
+   META
+   TIME (phase:setup, op:malloc, res:OK)
+   TIME (phase:ff_trigger, op:free, res:FF_ATTEMPT) (free(ptr+offset))
+   [FAULT (error:FF_DETECTED_OR_CRASH_CODE)] (if applicable)
+   SNAP (phase:post_primitive_trigger)
+   [TIME (phase:cleanup, op:free, res:OK)] (optional cleanup of original block)
+
+5. Use After Free Test (Workload W6) 
+   META
+   TIME (phase:setup, op:malloc, res:OK)       (alloc p1)
+   TIME (phase:setup, op:free, res:OK)         (free p1)
+   TIME (phase:uaf_write, op:memset_uaf, res:UAF_WRITE_DONE)
+   TIME (phase:uaf_realloc, op:malloc, res:OK_or_NULL) (alloc p2)
+   If p2 alloc OK:
+     TIME (phase:uaf_inspect, op:inspect_uaf, res:LEAK_DETECTED_or_NO_LEAK_DETECTED)
+     LEAK,<addr_p2> OR NOLEAK,<addr_p2>
+   [FAULT (error:UAF_CRASH_CODE)] (if applicable)
+   SNAP (phase:post_primitive_realloc)
+
+6. Overflow Header Test (Workload W7) 
+   META
+   TIME (phase:setup, op:malloc, res:OK)       (alloc block A)
+   TIME (phase:setup, op:malloc, res:OK)       (alloc block B)
+   SNAP (phase:after_setup)
+   TIME (phase:hof_write, op:memset_overflow, res:HOF_WRITE_DONE)
+   [FAULT (error:HOF_CRASH_OR_DETECTED_CODE)] (if applicable)
+   SNAP (phase:post_primitive_trigger)
+   [TIME (phase:hof_check_alloc, op:malloc, res:OK_or_NULL)] (optional check alloc C)
+   [SNAP (phase:after_hof_check_alloc)]
+
+This summary should provide a clear and concise reference for your logging standard.

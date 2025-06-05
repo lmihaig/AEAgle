@@ -1,10 +1,13 @@
 #include "malloc_monitor.h"
 #include "ztimer.h"
 #include <inttypes.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define ALLOCATOR_NAME "riot-tlsf"
+#define TICK_HZ 1000000
 #define TEST_NAME "MixedLifetime"
 #define HEAP_SIZE 65536
 #define BLOCK_SIZE 128
@@ -12,116 +15,134 @@
 #define BURST_ROUNDS 10
 #define BURST_COUNT 10
 
+#define PRINTF_LOG_RIOT(format, ...)         \
+       do                                    \
+       {                                     \
+              printf(format, ##__VA_ARGS__); \
+              fflush(stdout);                \
+       } while (0)
+
+#define LOG_TEST_START(alloc_name, test_name_str) \
+       PRINTF_LOG_RIOT("\r\n# %s %s start\r\n", (alloc_name), (test_name_str))
+
+#define LOG_TEST_END(alloc_name, test_name_str) \
+       PRINTF_LOG_RIOT("# %s %s end\r\n", (alloc_name), (test_name_str))
+
+#define LOG_META_RIOT(tick_hz_val) \
+       PRINTF_LOG_RIOT("META,tick_hz,%u\r\n", (unsigned)(tick_hz_val))
+
+#define LOG_TIME_RIOT(phase_str, op_str, size_val, time_in, time_out, result_str, ac, fc) \
+       PRINTF_LOG_RIOT("TIME,%s,%s,%u,%u,%u,%s,%lu,%lu\r\n",                              \
+                       (phase_str), (op_str), (unsigned)(size_val),                       \
+                       (unsigned)(time_in), (unsigned)(time_out), (result_str),           \
+                       (unsigned long)(ac), (unsigned long)(fc))
+
+#define LOG_SNAP_RIOT(phase_str, free_b_val, allocated_b_val, max_alloc_b_val) \
+       PRINTF_LOG_RIOT("SNAP,%s,%u,%u,%u\r\n",                                 \
+                       (phase_str), (unsigned)(free_b_val),                    \
+                       (unsigned)(allocated_b_val), (unsigned)(max_alloc_b_val))
+
+#define LOG_FAULT_RIOT(current_ticks, error_str) \
+       PRINTF_LOG_RIOT("FAULT,%u,0xDEAD,%s\r\n", (unsigned)(current_ticks), (error_str))
+
+static uint32_t alloc_cnt = 0;
+static uint32_t free_cnt = 0;
+
+static void emit_snapshot_riot(const char *phase)
+{
+       size_t current_usage = malloc_monitor_get_usage_current();
+       size_t high_watermark = malloc_monitor_get_usage_high_watermark();
+       LOG_SNAP_RIOT(phase, 0, current_usage, high_watermark);
+}
+
 int main(void)
 {
        malloc_monitor_reset_high_watermark();
 
-       printf("\r\n");
-       printf("# %s %s start\r\n", ALLOCATOR_NAME, TEST_NAME);
-       fflush(stdout);
+       LOG_TEST_START(ALLOCATOR_NAME, TEST_NAME);
+       LOG_META_RIOT(TICK_HZ);
 
        void *pinned[PIN_COUNT];
        void *buf[BURST_COUNT];
-       uint32_t alloc_cnt = 0;
-       uint32_t free_cnt = 0;
+       uint32_t t1, t2, t3, t4, t5, t6, t7, t8;
+       int i, round_idx, j_idx;
+       char snap_phase_label[64];
+       int successfully_pinned = 0;
 
-       size_t before_cur = malloc_monitor_get_usage_current();
-       size_t before_high = malloc_monitor_get_usage_high_watermark();
-       printf("SNAP,baseline,%u,%u\r\n", (unsigned)before_cur,
-              (unsigned)before_high);
-       fflush(stdout);
+       for (i = 0; i < PIN_COUNT; ++i)
+              pinned[i] = NULL;
+       for (i = 0; i < BURST_COUNT; ++i)
+              buf[i] = NULL;
 
-       for (int i = 0; i < PIN_COUNT; ++i)
+       emit_snapshot_riot("baseline");
+
+       for (i = 0; i < PIN_COUNT; ++i)
        {
-              uint32_t t1 = ztimer_now(ZTIMER_USEC);
+              t1 = ztimer_now(ZTIMER_USEC);
               pinned[i] = malloc(BLOCK_SIZE * 2);
-              uint32_t t2 = ztimer_now(ZTIMER_USEC);
+              t2 = ztimer_now(ZTIMER_USEC);
               if (!pinned[i])
               {
-                     printf("TIME,pin,malloc,%u,%u,%u,NULL,%lu,%lu\r\n",
-                            (unsigned)(BLOCK_SIZE * 2), (unsigned)t1, (unsigned)t2, alloc_cnt,
-                            free_cnt);
-                     printf("# %s %s end\r\n", ALLOCATOR_NAME, TEST_NAME);
-                     return 0;
+                     LOG_TIME_RIOT("pin", "malloc", (BLOCK_SIZE * 2), t1, t2, "NULL", alloc_cnt, free_cnt);
+                     LOG_FAULT_RIOT(ztimer_now(ZTIMER_USEC), "OOM");
+                     goto cleanup_pinned;
               }
               alloc_cnt++;
-              printf("TIME,pin,malloc,%u,%u,%u,OK,%lu,%lu\r\n",
-                     (unsigned)(BLOCK_SIZE * 2), (unsigned)t1, (unsigned)t2, alloc_cnt,
-                     free_cnt);
-              fflush(stdout);
-
-              size_t after_pin_cur = malloc_monitor_get_usage_current();
-              size_t after_pin_high = malloc_monitor_get_usage_high_watermark();
-              printf("SNAP,after_pin_%d,%u,%u\r\n", i + 1, (unsigned)after_pin_cur,
-                     (unsigned)after_pin_high);
-              fflush(stdout);
+              LOG_TIME_RIOT("pin", "malloc", (BLOCK_SIZE * 2), t1, t2, "OK", alloc_cnt, free_cnt);
+              successfully_pinned++;
        }
+       emit_snapshot_riot("after_pins");
 
-       for (int round = 1; round <= BURST_ROUNDS; ++round)
+       for (round_idx = 1; round_idx <= BURST_ROUNDS; ++round_idx)
        {
-              int i;
+              int current_burst_successful_allocs = 0;
               for (i = 0; i < BURST_COUNT; ++i)
               {
-                     uint32_t t3 = ztimer_now(ZTIMER_USEC);
+                     t3 = ztimer_now(ZTIMER_USEC);
                      buf[i] = malloc(BLOCK_SIZE);
-                     uint32_t t4 = ztimer_now(ZTIMER_USEC);
+                     t4 = ztimer_now(ZTIMER_USEC);
                      if (!buf[i])
                      {
-                            printf("TIME,burst,malloc,%u,%u,%u,NULL,%lu,%lu\r\n",
-                                   (unsigned)BLOCK_SIZE, (unsigned)t3, (unsigned)t4, alloc_cnt,
-                                   free_cnt);
-                            printf("# %s %s end\r\n", ALLOCATOR_NAME, TEST_NAME);
-                            goto cleanup;
+                            LOG_TIME_RIOT("burst", "malloc", BLOCK_SIZE, t3, t4, "NULL", alloc_cnt, free_cnt);
+                            LOG_FAULT_RIOT(ztimer_now(ZTIMER_USEC), "OOM");
+                            goto cleanup_pinned;
                      }
                      alloc_cnt++;
-                     printf("TIME,burst,malloc,%u,%u,%u,OK,%lu,%lu\r\n", (unsigned)BLOCK_SIZE,
-                            (unsigned)t3, (unsigned)t4, alloc_cnt, free_cnt);
-                     fflush(stdout);
+                     LOG_TIME_RIOT("burst", "malloc", BLOCK_SIZE, t3, t4, "OK", alloc_cnt, free_cnt);
+                     current_burst_successful_allocs++;
               }
 
-              size_t after_burst_alloc_cur = malloc_monitor_get_usage_current();
-              size_t after_burst_alloc_high = malloc_monitor_get_usage_high_watermark();
-              printf("SNAP,after_burst_alloc_%02d,%u,%u\r\n", round,
-                     (unsigned)after_burst_alloc_cur, (unsigned)after_burst_alloc_high);
-              fflush(stdout);
+              snprintf(snap_phase_label, sizeof(snap_phase_label), "after_burst_alloc_%02d", round_idx);
+              emit_snapshot_riot(snap_phase_label);
 
-              for (int j = i - 1; j >= 0; --j)
+              for (j_idx = current_burst_successful_allocs - 1; j_idx >= 0; --j_idx)
               {
-                     uint32_t t5 = ztimer_now(ZTIMER_USEC);
-                     free(buf[j]);
-                     uint32_t t6 = ztimer_now(ZTIMER_USEC);
+                     t5 = ztimer_now(ZTIMER_USEC);
+                     free(buf[j_idx]);
+                     buf[j_idx] = NULL;
+                     t6 = ztimer_now(ZTIMER_USEC);
                      free_cnt++;
-                     printf("TIME,burst,free,%u,%u,%u,OK,%lu,%lu\r\n", (unsigned)BLOCK_SIZE,
-                            (unsigned)t5, (unsigned)t6, alloc_cnt, free_cnt);
-                     fflush(stdout);
+                     LOG_TIME_RIOT("burst", "free", BLOCK_SIZE, t5, t6, "OK", alloc_cnt, free_cnt);
+              }
+              snprintf(snap_phase_label, sizeof(snap_phase_label), "after_burst_free_%02d", round_idx);
+              emit_snapshot_riot(snap_phase_label);
+       }
 
-                     size_t after_burst_free_cur = malloc_monitor_get_usage_current();
-                     size_t after_burst_free_high = malloc_monitor_get_usage_high_watermark();
-                     printf("SNAP,after_burst_free_%02d_%02d,%u,%u\r\n", round, j + 1,
-                            (unsigned)after_burst_free_cur, (unsigned)after_burst_free_high);
-                     fflush(stdout);
+cleanup_pinned:
+       for (i = 0; i < successfully_pinned; ++i)
+       {
+              if (pinned[i])
+              {
+                     t7 = ztimer_now(ZTIMER_USEC);
+                     free(pinned[i]);
+                     pinned[i] = NULL;
+                     t8 = ztimer_now(ZTIMER_USEC);
+                     free_cnt++;
+                     LOG_TIME_RIOT("cleanup", "free", (BLOCK_SIZE * 2), t7, t8, "OK", alloc_cnt, free_cnt);
               }
        }
+       emit_snapshot_riot("post_cleanup");
 
-cleanup:
-       for (int i = 0; i < PIN_COUNT; ++i)
-       {
-              uint32_t t7 = ztimer_now(ZTIMER_USEC);
-              free(pinned[i]);
-              uint32_t t8 = ztimer_now(ZTIMER_USEC);
-              free_cnt++;
-              printf("TIME,cleanup,free,%u,%u,%u,OK,%lu,%lu\r\n",
-                     (unsigned)(BLOCK_SIZE * 2), (unsigned)t7, (unsigned)t8, alloc_cnt,
-                     free_cnt);
-              fflush(stdout);
-
-              size_t after_cleanup_cur = malloc_monitor_get_usage_current();
-              size_t after_cleanup_high = malloc_monitor_get_usage_high_watermark();
-              printf("SNAP,after_cleanup_%d,%u,%u\r\n", i + 1,
-                     (unsigned)after_cleanup_cur, (unsigned)after_cleanup_high);
-              fflush(stdout);
-       }
-
-       printf("# %s %s end\r\n", ALLOCATOR_NAME, TEST_NAME);
+       LOG_TEST_END(ALLOCATOR_NAME, TEST_NAME);
        return 0;
 }

@@ -1,62 +1,59 @@
-#include "ztimer.h"
-#include <malloc.h>
-#include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
+#include <stdlib.h> // For malloc, free (typically TLSF in RIOT)
+#include <string.h> // For snprintf, memset
+#include <stdint.h> // For uint8_t
 
-#define ALLOCATOR_NAME "riot-tlsf"
-#define TEST_NAME "LeakExhaust"
-#define BLOCK_SIZE 128U
+#include "memarray.h" // For memarray allocator
 
-#define P_META() printf("META,tick_hz,%u\r\n", (unsigned)1000000U)
+// Defines for TLSF (malloc/free) demonstration
+#define TLSF_ALLOC_SIZE 40
 
-#define P_TIME(ph, op, sz, ti, to, res)                                \
-  printf("TIME,%s,%s,%u,%u,%u,%s,%lu,%lu\r\n", ph, op, (unsigned)(sz), \
-         (unsigned)(ti), (unsigned)(to), res, alloc_cnt, free_cnt)
-
-#define P_SNAP(ph, fb, ab, mb) \
-  printf("SNAP,%s,%d,%d,%u\r\n", ph, fb, ab, (unsigned)(mb))
-
-#define P_FAULT(res) \
-  printf("FAULT,%u,0xDEAD,%s\r\n", (unsigned)ztimer_now(ZTIMER_USEC), res)
-
-static uint32_t alloc_cnt = 0;
-static uint32_t free_cnt = 0;
-static size_t max_live_bytes = 0;
-
-static void emit_snapshot(const char *phase)
-{
-  struct mallinfo mi = mallinfo();
-  if ((size_t)mi.uordblks > max_live_bytes)
-  {
-    max_live_bytes = mi.uordblks;
-  }
-  P_SNAP(phase, mi.fordblks, mi.uordblks, max_live_bytes);
-}
+// Defines for memarray demonstration
+#define MEMA_BLOCK_SIZE 32
+#define MEMA_NUM_BLOCKS 2
+static uint8_t mema_pool_data[MEMA_NUM_BLOCKS * MEMA_BLOCK_SIZE];
+static memarray_t my_mema_pool;
 
 int main(void)
 {
-  void *p;
-  printf("# %s %s start\n", ALLOCATOR_NAME, TEST_NAME);
-  P_META();
+       char *tlsf_message_buffer;
+       char *mema_message_buffer;
 
-  while (1)
-  {
-    uint32_t t_in = ztimer_now(ZTIMER_USEC);
-    p = malloc(BLOCK_SIZE);
-    uint32_t t_out = ztimer_now(ZTIMER_USEC);
+       puts("RIOT OS Memory Demo - Concise\r\n");
 
-    if (!p)
-    {
-      P_TIME("leak", "malloc", BLOCK_SIZE, t_in, t_out, "NULL");
-      P_FAULT("OOM");
-      break;
-    }
-    alloc_cnt++;
-    P_TIME("leak", "malloc", BLOCK_SIZE, t_in, t_out, "OK");
-  }
+       // --- TLSF (malloc/free) Demo ---
+       tlsf_message_buffer = (char *)malloc(TLSF_ALLOC_SIZE);
 
-  emit_snapshot("after_exhaust");
-  printf("# %s %s end\n", ALLOCATOR_NAME, TEST_NAME);
-  return 0;
+       if (tlsf_message_buffer != NULL)
+       {
+              memset(tlsf_message_buffer, 0, TLSF_ALLOC_SIZE);
+              snprintf(tlsf_message_buffer, TLSF_ALLOC_SIZE, "dynamically allocated memory (TLSF)");
+              printf("Hello from %s\r\n", tlsf_message_buffer);
+              free(tlsf_message_buffer);
+              tlsf_message_buffer = NULL;
+       }
+       else
+       {
+              puts("malloc (TLSF) failed.");
+       }
+
+       // --- Memarray Demo ---
+       memarray_init(&my_mema_pool, mema_pool_data, MEMA_BLOCK_SIZE, MEMA_NUM_BLOCKS);
+       mema_message_buffer = (char *)memarray_alloc(&my_mema_pool);
+
+       if (mema_message_buffer != NULL)
+       {
+              memset(mema_message_buffer, 0, MEMA_BLOCK_SIZE);
+              snprintf(mema_message_buffer, MEMA_BLOCK_SIZE, "fixed-block memory (memarray)");
+              printf("Hello from %s\r\n", mema_message_buffer);
+              memarray_free(&my_mema_pool, mema_message_buffer);
+              mema_message_buffer = NULL;
+       }
+       else
+       {
+              puts("memarray_alloc failed.");
+       }
+
+       puts("\r\nDemo finished.");
+       return 0;
 }

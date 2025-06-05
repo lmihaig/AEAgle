@@ -1,6 +1,7 @@
-SNAP,baseline,32,0
-TIME,setup,alloc,128,9442,9444,OK,1,0
-SNAP,after_alloc,31,1
-TIME,free1,free,128,14825,14827,OK,1,1
-SNAP,after_free1,32,0
-TIME,free2,free,128,20295,20297,BAD_FREE,1,1
+META,tick_hz,1000000
+SNAP,baseline,4096,0,0
+TIME,setup,malloc,128,11700,11702,OK,1,0
+SNAP,after_setup,3968,128,128
+TIME,setup,free,128,18068,18070,OK,1,1
+SNAP,after_first_free,4096,0,128
+TIME,df_trigger,free,128,24520,24522,DF_ATTEMPT,1,1

@@ -4,6 +4,7 @@
 #include <zephyr/sys/mem_stats.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/sys_heap.h>
+#include <stdio.h> // For printk with %p if not implicitly handled by Zephyr's printk
 
 #define ALLOCATOR_NAME "zephyr"
 #define TEST_NAME "UseAfterFree"
@@ -27,6 +28,9 @@ static uint32_t alloc_cnt, free_cnt;
 #define P_FAULT(res) \
   printk("FAULT,%" PRIu64 ",0xDEAD,%s\n", (uint64_t)k_uptime_ticks(), res)
 
+#define P_LEAK(addr) printk("LEAK,%p\n", (void *)addr)
+#define P_NOLEAK(addr) printk("NOLEAK,%p\n", (void *)addr)
+
 static void emit_snapshot(const char *phase)
 {
   struct sys_memory_stats st;
@@ -36,88 +40,89 @@ static void emit_snapshot(const char *phase)
 
 int main(void)
 {
-  void *p1, *p2;
-  uint8_t *buf1, *buf2;
-  const uint8_t PATTERN = 0x5A;
+  void *p1 = NULL;
+  void *p2 = NULL;
+  uint8_t *buf1;
+  uint8_t *buf2;
+  // const uint8_t PATTERN = 0x5A; // Original pattern not used in UAF check logic with 0xA5
+  uint64_t tin, tout;
 
   printk("# %s %s start\n", ALLOCATOR_NAME, TEST_NAME);
   P_META();
 
+  tin = k_uptime_ticks();
+  p1 = k_heap_alloc(&my_heap, BLOCK_SIZE, K_NO_WAIT);
+  tout = k_uptime_ticks();
+  if (!p1)
   {
-    uint64_t tin = k_uptime_ticks();
-    p1 = k_heap_alloc(&my_heap, BLOCK_SIZE, K_NO_WAIT);
-    uint64_t tout = k_uptime_ticks();
-    if (!p1)
-    {
-      P_TIME("alloc1", "malloc", BLOCK_SIZE, tin, tout, "NULL");
-      P_FAULT("OOM");
-      goto done;
-    }
-    alloc_cnt++;
-    P_TIME("alloc1", "malloc", BLOCK_SIZE, tin, tout, "OK");
-
-    memset(p1, PATTERN, BLOCK_SIZE);
+    P_TIME("setup", "malloc", BLOCK_SIZE, tin, tout, "NULL");
+    P_FAULT("OOM");
+    goto done;
   }
-  emit_snapshot("after_alloc1");
+  alloc_cnt++;
+  P_TIME("setup", "malloc", BLOCK_SIZE, tin, tout, "OK");
+  // memset(p1, PATTERN, BLOCK_SIZE); // Initial pattern setting, not directly part of logged UAF steps
+  emit_snapshot("after_setup");
 
-  {
-    uint64_t tin = k_uptime_ticks();
-    k_heap_free(&my_heap, p1);
-    uint64_t tout = k_uptime_ticks();
-    free_cnt++;
-    P_TIME("free1", "free", BLOCK_SIZE, tin, tout, "OK");
-  }
+  tin = k_uptime_ticks();
+  k_heap_free(&my_heap, p1);
+  tout = k_uptime_ticks();
+  free_cnt++;
+  P_TIME("setup", "free", BLOCK_SIZE, tin, tout, "OK");
   emit_snapshot("after_free1");
 
   buf1 = (uint8_t *)p1;
-  {
-    uint64_t tin = k_uptime_ticks();
-    memset(buf1, 0xA5, BLOCK_SIZE); // overwrite
-    uint64_t tout = k_uptime_ticks();
-    P_TIME("uaf", "memset", BLOCK_SIZE, tin, tout, "DONE");
-  }
+  tin = k_uptime_ticks();
+  memset(buf1, 0xA5, BLOCK_SIZE);
+  tout = k_uptime_ticks();
+  P_TIME("uaf_write", "memset_uaf", BLOCK_SIZE, tin, tout, "UAF_WRITE_DONE");
 
+  tin = k_uptime_ticks();
+  p2 = k_heap_alloc(&my_heap, BLOCK_SIZE, K_NO_WAIT);
+  tout = k_uptime_ticks();
+  if (!p2)
   {
-    uint64_t tin = k_uptime_ticks();
-    p2 = k_heap_alloc(&my_heap, BLOCK_SIZE, K_NO_WAIT);
-    uint64_t tout = k_uptime_ticks();
-    if (!p2)
-    {
-      P_TIME("alloc2", "malloc", BLOCK_SIZE, tin, tout, "NULL");
-      P_FAULT("OOM");
-      goto done;
-    }
-    alloc_cnt++;
-    P_TIME("alloc2", "malloc", BLOCK_SIZE, tin, tout, "OK");
+    P_TIME("uaf_realloc", "malloc", BLOCK_SIZE, tin, tout, "NULL");
+    P_FAULT("OOM");
+    goto done;
   }
-  emit_snapshot("after_alloc2");
+  alloc_cnt++;
+  P_TIME("uaf_realloc", "malloc", BLOCK_SIZE, tin, tout, "OK");
+  emit_snapshot("post_primitive_realloc");
 
   buf2 = (uint8_t *)p2;
+  tin = k_uptime_ticks(); // For inspect timing
+  bool leaked = false;
+  for (int i = 0; i < BLOCK_SIZE; ++i)
   {
-    bool leaked = false;
-    for (int i = 0; i < BLOCK_SIZE; ++i)
+    if (buf2[i] == 0xA5)
     {
-      if (buf2[i] == 0xA5)
-      {
-        leaked = true;
-        break;
-      }
-    }
-    if (leaked)
-    {
-      P_TIME("inspect", "check", BLOCK_SIZE, k_uptime_ticks(), k_uptime_ticks(),
-             "LEAKED");
-    }
-    else
-    {
-      P_TIME("inspect", "check", BLOCK_SIZE, k_uptime_ticks(), k_uptime_ticks(),
-             "CLEAN");
+      leaked = true;
+      break;
     }
   }
+  tout = k_uptime_ticks(); // For inspect timing
 
-  k_heap_free(&my_heap, p2);
-  free_cnt++;
-  emit_snapshot("after_cleanup");
+  if (leaked)
+  {
+    P_TIME("uaf_inspect", "inspect_uaf", BLOCK_SIZE, tin, tout, "LEAK_DETECTED");
+    P_LEAK(p2);
+  }
+  else
+  {
+    P_TIME("uaf_inspect", "inspect_uaf", BLOCK_SIZE, tin, tout, "NO_LEAK_DETECTED");
+    P_NOLEAK(p2);
+  }
+
+  if (p2)
+  { // Check if p2 was allocated before attempting to free
+    tin = k_uptime_ticks();
+    k_heap_free(&my_heap, p2);
+    tout = k_uptime_ticks();
+    free_cnt++;
+    P_TIME("cleanup", "free", BLOCK_SIZE, tin, tout, "OK");
+  }
+  emit_snapshot("post_cleanup");
 
 done:
   printk("# %s %s end\n", ALLOCATOR_NAME, TEST_NAME);

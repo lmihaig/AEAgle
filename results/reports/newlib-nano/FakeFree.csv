@@ -1,7 +1,7 @@
 META,tick_hz,32768
 TIME,setup,malloc,128,308,308,OK,1,0
-SNAP,after_alloc,0,136,136
-TIME,fakefree,free,64,500,500,BAD_FREE,1,1
-SNAP,after_fakefree,0,136,136
-TIME,cleanup,free,128,717,717,OK?,1,2
-SNAP,after_cleanup,136,0,136
+SNAP,after_setup,0,136,136
+TIME,ff_trigger,free,128,500,500,FF_ATTEMPT,1,0
+SNAP,post_primitive_trigger,0,136,136
+TIME,cleanup,free,128,753,753,OK,1,1
+SNAP,post_cleanup,136,0,136

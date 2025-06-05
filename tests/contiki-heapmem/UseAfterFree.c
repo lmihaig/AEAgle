@@ -1,102 +1,164 @@
 #include "contiki.h"
 #include "lib/heapmem.h"
+#include "sys/cc.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <stdint.h>
+#include <stdbool.h>
 
 #define ALLOCATOR_NAME "contiki-heapmem"
 #define TEST_NAME "UseAfterFree"
 #define BLOCK_SIZE 128
 
-static uint32_t alloc_cnt = 0, free_cnt = 0;
+#define PRINTF_LOG_CONTIKI(format, ...) printf(format, ##__VA_ARGS__)
 
-#define P_META() printf("META,tick_hz,%u\r\r\n", CLOCK_SECOND)
+#define LOG_TEST_START(alloc_name, test_name_str) \
+    PRINTF_LOG_CONTIKI("# %s %s start\r\n", (alloc_name), (test_name_str))
 
-#define P_TIME(ph, op, sz, ti, to, res)                                      \
-    printf("TIME,%s,%s,%u,%lu,%lu,%s,%lu,%lu\r\r\n", ph, op, (unsigned)(sz), \
-           (unsigned long)(ti), (unsigned long)(to), res, alloc_cnt, free_cnt)
+#define LOG_TEST_END(alloc_name, test_name_str) \
+    PRINTF_LOG_CONTIKI("# %s %s end\r\n", (alloc_name), (test_name_str))
 
-#define P_FAULT(res) \
-    printf("FAULT,%lu,0xDEAD,%s\r\n", (unsigned long)clock_time(), res)
+#define LOG_META_CONTIKI(tick_hz_val) \
+    PRINTF_LOG_CONTIKI("META,tick_hz,%u\r\n", (unsigned)(tick_hz_val))
+
+#define LOG_TIME_CONTIKI(phase_str, op_str, size_val, time_in, time_out, result_str, ac, fc) \
+    PRINTF_LOG_CONTIKI("TIME,%s,%s,%u,%lu,%lu,%s,%lu,%lu\r\n",                               \
+                       (phase_str), (op_str), (unsigned)(size_val),                          \
+                       (unsigned long)(time_in), (unsigned long)(time_out), (result_str),    \
+                       (unsigned long)(ac), (unsigned long)(fc))
+
+#define LOG_SNAP_CONTIKI(phase_str, free_b_val, allocated_b_val, max_alloc_b_val) \
+    PRINTF_LOG_CONTIKI("SNAP,%s,%lu,%lu,%lu\r\n",                                 \
+                       (phase_str), (unsigned long)(free_b_val),                  \
+                       (unsigned long)(allocated_b_val), (unsigned long)(max_alloc_b_val))
+
+#define LOG_FAULT_CONTIKI(current_ticks, error_str) \
+    PRINTF_LOG_CONTIKI("FAULT,%lu,0xDEAD,%s\r\n", (unsigned long)(current_ticks), (error_str))
+
+#define LOG_LEAK_CONTIKI(addr_val) \
+    PRINTF_LOG_CONTIKI("LEAK,%p\r\n", (void *)(addr_val))
+
+#define LOG_NOLEAK_CONTIKI(addr_val) \
+    PRINTF_LOG_CONTIKI("NOLEAK,%p\r\n", (void *)(addr_val))
+
+static uint32_t alloc_cnt = 0;
+static uint32_t free_cnt = 0;
+static unsigned long max_observed_allocated_bytes_heapmem = 0;
+static void emit_snapshot_contiki_heapmem(const char *phase)
+{
+    heapmem_stats_t stats;
+    heapmem_stats(&stats);
+
+    if (stats.allocated > max_observed_allocated_bytes_heapmem)
+    {
+        max_observed_allocated_bytes_heapmem = stats.allocated;
+    }
+    LOG_SNAP_CONTIKI(phase, stats.available, stats.allocated, max_observed_allocated_bytes_heapmem);
+}
 
 PROCESS(use_after_free_test, "Use After Free Test");
 AUTOSTART_PROCESSES(&use_after_free_test);
 
 PROCESS_THREAD(use_after_free_test, ev, data)
 {
-    static void *p1, *p2;
-    static uint8_t *buf1, *buf2;
+    static void *p1 = NULL, *p2 = NULL;
+    static uint8_t *buf1;
     static const uint8_t PATTERN = 0x5A;
-    static clock_time_t tin, tout;
+    static clock_time_t tin, tout, t_inspect_in, t_inspect_out, t_cleanup_in, t_cleanup_out;
+    static int i;
+    static bool leaked;
 
     PROCESS_BEGIN();
 
-    printf("# %s %s start\r\r\n", ALLOCATOR_NAME, TEST_NAME);
-    P_META();
+    alloc_cnt = 0;
+    free_cnt = 0;
+    max_observed_allocated_bytes_heapmem = 0;
 
-    // Allocate and initialize p1
+    LOG_TEST_START(ALLOCATOR_NAME, TEST_NAME);
+    LOG_META_CONTIKI(CLOCK_SECOND);
+
+    emit_snapshot_contiki_heapmem("baseline");
+
     tin = clock_time();
     p1 = heapmem_alloc(BLOCK_SIZE);
     tout = clock_time();
     if (!p1)
     {
-        P_TIME("alloc1", "malloc", BLOCK_SIZE, tin, tout, "NULL");
-        P_FAULT("OOM");
-        goto done;
+        LOG_TIME_CONTIKI("setup", "malloc", BLOCK_SIZE, tin, tout, "NULL", alloc_cnt, free_cnt);
+        LOG_FAULT_CONTIKI(clock_time(), "OOM");
+        goto done_label;
     }
     alloc_cnt++;
-    P_TIME("alloc1", "malloc", BLOCK_SIZE, tin, tout, "OK");
-    memset(p1, PATTERN, BLOCK_SIZE);
 
-    // Free p1
+    LOG_TIME_CONTIKI("setup", "malloc", BLOCK_SIZE, tin, tout, "OK", alloc_cnt, free_cnt);
+    memset(p1, PATTERN, BLOCK_SIZE);
+    emit_snapshot_contiki_heapmem("after_setup");
+
     tin = clock_time();
     heapmem_free(p1);
     tout = clock_time();
     free_cnt++;
-    P_TIME("free1", "free", BLOCK_SIZE, tin, tout, "OK");
 
-    // Use-after-free: write to p1
+    LOG_TIME_CONTIKI("setup", "free", BLOCK_SIZE, tin, tout, "OK", alloc_cnt, free_cnt);
+    emit_snapshot_contiki_heapmem("after_free1");
+
     buf1 = (uint8_t *)p1;
     tin = clock_time();
-    memset(buf1, 0xA5, BLOCK_SIZE); // overwrite
+    memset(buf1, 0xA5, BLOCK_SIZE);
     tout = clock_time();
-    P_TIME("uaf", "memset", BLOCK_SIZE, tin, tout, "DONE");
+    LOG_TIME_CONTIKI("uaf_write", "memset_uaf", BLOCK_SIZE, tin, tout, "UAF_WRITE_DONE", alloc_cnt, free_cnt);
+    emit_snapshot_contiki_heapmem("after_uaf_write");
 
-    // Allocate p2
     tin = clock_time();
     p2 = heapmem_alloc(BLOCK_SIZE);
     tout = clock_time();
     if (!p2)
     {
-        P_TIME("alloc2", "malloc", BLOCK_SIZE, tin, tout, "NULL");
-        P_FAULT("OOM");
-        goto done;
+        LOG_TIME_CONTIKI("uaf_realloc", "malloc", BLOCK_SIZE, tin, tout, "NULL", alloc_cnt, free_cnt);
+        LOG_FAULT_CONTIKI(clock_time(), "OOM");
+        goto done_label;
     }
     alloc_cnt++;
-    P_TIME("alloc2", "malloc", BLOCK_SIZE, tin, tout, "OK");
 
-    // Check for leaked data
-    buf2 = (uint8_t *)p2;
-    bool leaked = false;
-    for (int i = 0; i < BLOCK_SIZE; ++i)
+    LOG_TIME_CONTIKI("uaf_realloc", "malloc", BLOCK_SIZE, tin, tout, "OK", alloc_cnt, free_cnt);
+
+    t_inspect_in = clock_time();
+    leaked = false;
+    for (i = 0; i < BLOCK_SIZE; ++i)
     {
-        if (buf2[i] == 0xA5)
+        if (((uint8_t *)p2)[i] == 0xA5)
         {
             leaked = true;
             break;
         }
     }
-    P_TIME("inspect", "check", BLOCK_SIZE, clock_time(), clock_time(),
-           leaked ? "LEAKED" : "CLEAN");
+    t_inspect_out = clock_time();
 
-    // Free p2
-    tin = clock_time();
-    heapmem_free(p2);
-    tout = clock_time();
-    free_cnt++;
-    P_TIME("cleanup", "free", BLOCK_SIZE, tin, tout, "OK");
+    if (leaked)
+    {
+        LOG_TIME_CONTIKI("uaf_inspect", "inspect_uaf", BLOCK_SIZE, t_inspect_in, t_inspect_out, "LEAK_DETECTED", alloc_cnt, free_cnt);
+        LOG_LEAK_CONTIKI(p2);
+    }
+    else
+    {
+        LOG_TIME_CONTIKI("uaf_inspect", "inspect_uaf", BLOCK_SIZE, t_inspect_in, t_inspect_out, "NO_LEAK_DETECTED", alloc_cnt, free_cnt);
+        LOG_NOLEAK_CONTIKI(p2);
+    }
+    emit_snapshot_contiki_heapmem("post_primitive_realloc");
 
-done:
-    printf("# %s %s end\r\r\n", ALLOCATOR_NAME, TEST_NAME);
+    if (p2 != NULL)
+    {
+        t_cleanup_in = clock_time();
+        heapmem_free(p2);
+        t_cleanup_out = clock_time();
+        p2 = NULL;
+        free_cnt++;
+
+        LOG_TIME_CONTIKI("cleanup", "free", BLOCK_SIZE, t_cleanup_in, t_cleanup_out, "OK", alloc_cnt, free_cnt);
+    }
+    emit_snapshot_contiki_heapmem("post_cleanup");
+
+done_label:
+    LOG_TEST_END(ALLOCATOR_NAME, TEST_NAME);
     PROCESS_END();
 }

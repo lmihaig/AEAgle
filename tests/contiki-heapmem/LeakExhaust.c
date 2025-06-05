@@ -1,20 +1,53 @@
 #include "contiki.h"
 #include "lib/heapmem.h"
-#include <stdio.h>
+#include "sys/cc.h"
 #include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 
 #define ALLOCATOR_NAME "contiki-heapmem"
 #define TEST_NAME "LeakExhaust"
 #define BLOCK_SIZE 128
 
-static uint32_t alloc_cnt = 0;
+#define PRINTF_LOG_CONTIKI(format, ...) printf(format, ##__VA_ARGS__)
 
-#define P_META() printf("META,tick_hz,%u\r\n", CLOCK_SECOND)
-#define P_TIME(ph, op, sz, ti, to, res)                                  \
-    printf("TIME,%s,%s,%u,%lu,%lu,%s,%lu,0\r\n", ph, op, (unsigned)(sz), \
-           (unsigned long)(ti), (unsigned long)(to), res, alloc_cnt)
-#define P_FAULT(res) \
-    printf("FAULT,%lu,0xDEAD,%s\r\n", (unsigned long)clock_time(), res)
+#define LOG_TEST_START(alloc_name, test_name_str) \
+    PRINTF_LOG_CONTIKI("# %s %s start\r\n", (alloc_name), (test_name_str))
+
+#define LOG_TEST_END(alloc_name, test_name_str) \
+    PRINTF_LOG_CONTIKI("# %s %s end\r\n", (alloc_name), (test_name_str))
+
+#define LOG_META_CONTIKI(tick_hz_val) \
+    PRINTF_LOG_CONTIKI("META,tick_hz,%u\r\n", (unsigned)(tick_hz_val))
+
+#define LOG_TIME_CONTIKI(phase_str, op_str, size_val, time_in, time_out, result_str, ac, fc) \
+    PRINTF_LOG_CONTIKI("TIME,%s,%s,%u,%lu,%lu,%s,%lu,%lu\r\n",                               \
+                       (phase_str), (op_str), (unsigned)(size_val),                          \
+                       (unsigned long)(time_in), (unsigned long)(time_out), (result_str),    \
+                       (unsigned long)(ac), (unsigned long)(fc))
+
+#define LOG_SNAP_CONTIKI(phase_str, free_b_val, allocated_b_val, max_alloc_b_val) \
+    PRINTF_LOG_CONTIKI("SNAP,%s,%lu,%lu,%lu\r\n",                                 \
+                       (phase_str), (unsigned long)(free_b_val),                  \
+                       (unsigned long)(allocated_b_val), (unsigned long)(max_alloc_b_val))
+
+#define LOG_FAULT_CONTIKI(current_ticks, error_str) \
+    PRINTF_LOG_CONTIKI("FAULT,%lu,0xDEAD,%s\r\n", (unsigned long)(current_ticks), (error_str))
+
+static uint32_t alloc_cnt = 0;
+static uint32_t free_cnt = 0;
+static unsigned long max_observed_allocated_bytes_heapmem = 0;
+static void emit_snapshot_contiki_heapmem(const char *phase)
+{
+    heapmem_stats_t stats;
+    heapmem_stats(&stats);
+
+    if (stats.allocated > max_observed_allocated_bytes_heapmem)
+    {
+        max_observed_allocated_bytes_heapmem = stats.allocated;
+    }
+    LOG_SNAP_CONTIKI(phase, stats.available, stats.allocated, max_observed_allocated_bytes_heapmem);
+}
 
 PROCESS(leak_exhaust_test, "Leak Exhaust Test");
 AUTOSTART_PROCESSES(&leak_exhaust_test);
@@ -26,8 +59,14 @@ PROCESS_THREAD(leak_exhaust_test, ev, data)
 
     PROCESS_BEGIN();
 
-    printf("# %s %s start\r\n", ALLOCATOR_NAME, TEST_NAME);
-    P_META();
+    alloc_cnt = 0;
+    free_cnt = 0;
+    max_observed_allocated_bytes_heapmem = 0;
+
+    LOG_TEST_START(ALLOCATOR_NAME, TEST_NAME);
+    LOG_META_CONTIKI(CLOCK_SECOND);
+
+    emit_snapshot_contiki_heapmem("baseline");
 
     while (1)
     {
@@ -37,14 +76,17 @@ PROCESS_THREAD(leak_exhaust_test, ev, data)
 
         if (!p)
         {
-            P_TIME("leak", "malloc", BLOCK_SIZE, tin, tout, "NULL");
-            P_FAULT("OOM");
+            LOG_TIME_CONTIKI("leakloop", "malloc", BLOCK_SIZE, tin, tout, "NULL", alloc_cnt, free_cnt);
+            LOG_FAULT_CONTIKI(clock_time(), "OOM");
             break;
         }
         alloc_cnt++;
-        P_TIME("leak", "malloc", BLOCK_SIZE, tin, tout, "OK");
+
+        LOG_TIME_CONTIKI("leakloop", "malloc", BLOCK_SIZE, tin, tout, "OK", alloc_cnt, free_cnt);
     }
 
-    printf("# %s %s end\r\n", ALLOCATOR_NAME, TEST_NAME);
+    emit_snapshot_contiki_heapmem("after_leakloop_exhaustion");
+
+    LOG_TEST_END(ALLOCATOR_NAME, TEST_NAME);
     PROCESS_END();
 }

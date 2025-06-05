@@ -1,7 +1,8 @@
 META,tick_hz,1000
-TIME,setup,malloc,128,4,4,OK,1,0
-SNAP,after_alloc,29424,3344,3344
-TIME,free1,free,128,10,10,OK,1,1
-SNAP,after_free1,29424,3344,3344
-TIME,free2,free,128,16,16,dblfree,1,2
-SNAP,after_free2,29424,3344,3344
+SNAP,baseline,62320,3216,3216
+TIME,setup,malloc,128,7,7,OK,1,0
+SNAP,after_setup,62192,3344,3344
+TIME,setup,free,128,13,13,OK,1,1
+SNAP,after_first_free,62192,3344,3344
+TIME,df_trigger,free,128,20,20,DF_ATTEMPT,1,2
+SNAP,post_primitive_trigger,62192,3344,3344

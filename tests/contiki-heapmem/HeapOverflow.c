@@ -1,89 +1,158 @@
 #include "contiki.h"
 #include "lib/heapmem.h"
-#include <stdio.h>
+#include "sys/cc.h"
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #define ALLOCATOR_NAME "contiki-heapmem"
 #define TEST_NAME "HeapOverflow"
 #define BLOCK_SIZE 128
 
-static uint32_t alloc_cnt = 0, free_cnt = 0;
+#define PRINTF_LOG_CONTIKI(format, ...) printf(format, ##__VA_ARGS__)
 
-#define P_META() printf("META,tick_hz,%u\r\n", CLOCK_SECOND)
-#define P_TIME(ph, op, sz, ti, to, res)                                    \
-    printf("TIME,%s,%s,%u,%lu,%lu,%s,%lu,%lu\r\n", ph, op, (unsigned)(sz), \
-           (unsigned long)(ti), (unsigned long)(to), res, alloc_cnt, free_cnt)
-#define P_FAULT(res) \
-    printf("FAULT,%lu,0xDEAD,%s\r\n", (unsigned long)clock_time(), res)
+#define LOG_TEST_START(alloc_name, test_name_str) \
+    PRINTF_LOG_CONTIKI("# %s %s start\r\n", (alloc_name), (test_name_str))
+
+#define LOG_TEST_END(alloc_name, test_name_str) \
+    PRINTF_LOG_CONTIKI("# %s %s end\r\n", (alloc_name), (test_name_str))
+
+#define LOG_META_CONTIKI(tick_hz_val) \
+    PRINTF_LOG_CONTIKI("META,tick_hz,%u\r\n", (unsigned)(tick_hz_val))
+
+#define LOG_TIME_CONTIKI(phase_str, op_str, size_val, time_in, time_out, result_str, ac, fc) \
+    PRINTF_LOG_CONTIKI("TIME,%s,%s,%u,%lu,%lu,%s,%lu,%lu\r\n",                               \
+                       (phase_str), (op_str), (unsigned)(size_val),                          \
+                       (unsigned long)(time_in), (unsigned long)(time_out), (result_str),    \
+                       (unsigned long)(ac), (unsigned long)(fc))
+
+#define LOG_SNAP_CONTIKI(phase_str, free_b_val, allocated_b_val, max_alloc_b_val) \
+    PRINTF_LOG_CONTIKI("SNAP,%s,%lu,%lu,%lu\r\n",                                 \
+                       (phase_str), (unsigned long)(free_b_val),                  \
+                       (unsigned long)(allocated_b_val), (unsigned long)(max_alloc_b_val))
+
+#define LOG_FAULT_CONTIKI(current_ticks, error_str) \
+    PRINTF_LOG_CONTIKI("FAULT,%lu,0xDEAD,%s\r\n", (unsigned long)(current_ticks), (error_str))
+
+static uint32_t alloc_cnt = 0;
+static uint32_t free_cnt = 0;
+
+static unsigned long max_observed_allocated_bytes_heapmem = 0;
+static void emit_snapshot_contiki_heapmem(const char *phase)
+{
+    heapmem_stats_t stats;
+    heapmem_stats(&stats);
+
+    if (stats.allocated > max_observed_allocated_bytes_heapmem)
+    {
+        max_observed_allocated_bytes_heapmem = stats.allocated;
+    }
+    LOG_SNAP_CONTIKI(phase, stats.available, stats.allocated, max_observed_allocated_bytes_heapmem);
+}
 
 PROCESS(heap_overflow_test, "Heap Overflow Test");
 AUTOSTART_PROCESSES(&heap_overflow_test);
 
 PROCESS_THREAD(heap_overflow_test, ev, data)
 {
-    static void *A, *B, *C;
+    static void *A = NULL, *B = NULL, *C = NULL;
     static char *overflow_ptr;
-    static clock_time_t tin, tout;
+    static clock_time_t tin, tout, t_cleanup_in, t_cleanup_out;
 
     PROCESS_BEGIN();
 
-    printf("# %s %s start\r\n", ALLOCATOR_NAME, TEST_NAME);
-    P_META();
+    alloc_cnt = 0;
+    free_cnt = 0;
+
+    max_observed_allocated_bytes_heapmem = 0;
+
+    LOG_TEST_START(ALLOCATOR_NAME, TEST_NAME);
+    LOG_META_CONTIKI(CLOCK_SECOND);
+
+    emit_snapshot_contiki_heapmem("baseline");
 
     tin = clock_time();
     A = heapmem_alloc(BLOCK_SIZE);
     tout = clock_time();
     if (!A)
     {
-        P_TIME("allocA", "malloc", BLOCK_SIZE, tin, tout, "NULL");
-        P_FAULT("OOM");
-        goto done;
+        LOG_TIME_CONTIKI("setup", "malloc", BLOCK_SIZE, tin, tout, "NULL", alloc_cnt, free_cnt);
+        LOG_FAULT_CONTIKI(clock_time(), "OOM");
+        goto done_label;
     }
     alloc_cnt++;
-    P_TIME("allocA", "malloc", BLOCK_SIZE, tin, tout, "OK");
+
+    LOG_TIME_CONTIKI("setup", "malloc", BLOCK_SIZE, tin, tout, "OK", alloc_cnt, free_cnt);
 
     tin = clock_time();
     B = heapmem_alloc(BLOCK_SIZE);
     tout = clock_time();
     if (!B)
     {
-        P_TIME("allocB", "malloc", BLOCK_SIZE, tin, tout, "NULL");
-        P_FAULT("OOM");
-        goto freeA;
+        LOG_TIME_CONTIKI("setup", "malloc", BLOCK_SIZE, tin, tout, "NULL", alloc_cnt, free_cnt);
+        LOG_FAULT_CONTIKI(clock_time(), "OOM");
+        goto cleanup_A_only;
     }
     alloc_cnt++;
-    P_TIME("allocB", "malloc", BLOCK_SIZE, tin, tout, "OK");
+
+    LOG_TIME_CONTIKI("setup", "malloc", BLOCK_SIZE, tin, tout, "OK", alloc_cnt, free_cnt);
+    emit_snapshot_contiki_heapmem("after_setup");
 
     overflow_ptr = (char *)A;
     tin = clock_time();
-    memset(overflow_ptr, 0xFF, BLOCK_SIZE + 8); // Overflow
+    memset(overflow_ptr, 0xFF, BLOCK_SIZE + 8);
     tout = clock_time();
-    P_TIME("overflow", "memset", BLOCK_SIZE + 8, tin, tout, "DONE");
+    LOG_TIME_CONTIKI("hof_write", "memset_overflow", BLOCK_SIZE + 8, tin, tout, "HOF_WRITE_DONE", alloc_cnt, free_cnt);
+    emit_snapshot_contiki_heapmem("post_primitive_trigger");
 
     tin = clock_time();
     C = heapmem_alloc(BLOCK_SIZE);
     tout = clock_time();
     if (!C)
     {
-        P_TIME("allocC", "malloc", BLOCK_SIZE, tin, tout, "NULL");
-        P_FAULT("OOM/CORRUPT");
+        LOG_TIME_CONTIKI("hof_check_alloc", "malloc", BLOCK_SIZE, tin, tout, "NULL", alloc_cnt, free_cnt);
+        LOG_FAULT_CONTIKI(clock_time(), "OOM");
     }
     else
     {
         alloc_cnt++;
-        P_TIME("allocC", "malloc", BLOCK_SIZE, tin, tout, "OK?");
+
+        LOG_TIME_CONTIKI("hof_check_alloc", "malloc", BLOCK_SIZE, tin, tout, "OK", alloc_cnt, free_cnt);
+
+        t_cleanup_in = clock_time();
         heapmem_free(C);
+        t_cleanup_out = clock_time();
         free_cnt++;
+
+        LOG_TIME_CONTIKI("cleanup", "free", BLOCK_SIZE, t_cleanup_in, t_cleanup_out, "OK", alloc_cnt, free_cnt);
+        C = NULL;
+    }
+    emit_snapshot_contiki_heapmem("after_hof_check_alloc");
+
+    if (B != NULL)
+    {
+        t_cleanup_in = clock_time();
+        heapmem_free(B);
+        t_cleanup_out = clock_time();
+        B = NULL;
+        free_cnt++;
+
+        LOG_TIME_CONTIKI("cleanup", "free", BLOCK_SIZE, t_cleanup_in, t_cleanup_out, "OK", alloc_cnt, free_cnt);
     }
 
-    heapmem_free(B);
-    free_cnt++;
-freeA:
-    heapmem_free(A);
-    free_cnt++;
+cleanup_A_only:
+    if (A != NULL)
+    {
+        t_cleanup_in = clock_time();
+        heapmem_free(A);
+        t_cleanup_out = clock_time();
+        A = NULL;
+        free_cnt++;
+        LOG_TIME_CONTIKI("cleanup", "free", BLOCK_SIZE, t_cleanup_in, t_cleanup_out, "OK", alloc_cnt, free_cnt);
+    }
+    emit_snapshot_contiki_heapmem("post_cleanup");
 
-done:
-    printf("# %s %s end\r\n", ALLOCATOR_NAME, TEST_NAME);
+done_label:
+    LOG_TEST_END(ALLOCATOR_NAME, TEST_NAME);
     PROCESS_END();
 }

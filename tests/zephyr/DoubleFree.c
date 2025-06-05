@@ -54,7 +54,7 @@ int main(void)
     alloc_cnt++;
     P_TIME("setup", "malloc", BLOCK_SIZE, tin, tout, "OK");
   }
-  emit_snapshot("after_alloc");
+  emit_snapshot("after_setup");
 
   {
     uint64_t tin = k_uptime_ticks();
@@ -62,9 +62,9 @@ int main(void)
     uint64_t tout = k_uptime_ticks();
 
     free_cnt++;
-    P_TIME("free1", "free", BLOCK_SIZE, tin, tout, "OK");
+    P_TIME("setup", "free", BLOCK_SIZE, tin, tout, "OK");
   }
-  emit_snapshot("after_free1");
+  emit_snapshot("after_first_free");
 
   {
     uint64_t tin = k_uptime_ticks();
@@ -72,9 +72,9 @@ int main(void)
     uint64_t tout = k_uptime_ticks();
 
     free_cnt++;
-    P_TIME("free2", "free", BLOCK_SIZE, tin, tout, "dblfree");
+    P_TIME("df_trigger", "free", BLOCK_SIZE, tin, tout, "DF_ATTEMPT");
   }
-  emit_snapshot("after_free2");
+  emit_snapshot("post_primitive_trigger");
 
 done:
   printk("# %s %s end\n", ALLOCATOR_NAME, TEST_NAME);

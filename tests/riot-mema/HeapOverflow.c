@@ -1,127 +1,149 @@
 #include "memarray.h"
 #include "ztimer.h"
 #include <inttypes.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define ALLOCATOR_NAME "riot-mema"
+#define TICK_HZ 1000000
 #define TEST_NAME "HeapOverflow"
 #define NUM_BLOCKS 32
 #define BLOCK_SIZE 64
 
+#define PRINTF_LOG_RIOT(format, ...)         \
+       do                                    \
+       {                                     \
+              printf(format, ##__VA_ARGS__); \
+              fflush(stdout);                \
+       } while (0)
+
+#define LOG_TEST_START(alloc_name, test_name_str) \
+       PRINTF_LOG_RIOT("\r\n# %s %s start\r\n", (alloc_name), (test_name_str))
+
+#define LOG_TEST_END(alloc_name, test_name_str) \
+       PRINTF_LOG_RIOT("# %s %s end\r\n", (alloc_name), (test_name_str))
+
+#define LOG_META_RIOT(tick_hz_val) \
+       PRINTF_LOG_RIOT("META,tick_hz,%u\r\n", (unsigned)(tick_hz_val))
+
+#define LOG_TIME_RIOT(phase_str, op_str, size_val, time_in, time_out, result_str, ac, fc) \
+       PRINTF_LOG_RIOT("TIME,%s,%s,%u,%u,%u,%s,%lu,%lu\r\n",                              \
+                       (phase_str), (op_str), (unsigned)(size_val),                       \
+                       (unsigned)(time_in), (unsigned)(time_out), (result_str),           \
+                       (unsigned long)(ac), (unsigned long)(fc))
+
+#define LOG_SNAP_RIOT(phase_str, free_b_val, allocated_b_val, max_alloc_b_val) \
+       PRINTF_LOG_RIOT("SNAP,%s,%u,%u,%u\r\n",                                 \
+                       (phase_str), (unsigned)(free_b_val),                    \
+                       (unsigned)(allocated_b_val), (unsigned)(max_alloc_b_val))
+
+#define LOG_FAULT_RIOT(current_ticks, error_str) \
+       PRINTF_LOG_RIOT("FAULT,%u,0xDEAD,%s\r\n", (unsigned)(current_ticks), (error_str))
+
 static uint8_t pool_data[NUM_BLOCKS * BLOCK_SIZE];
 static memarray_t pool;
+
+static uint32_t alloc_cnt = 0;
+static uint32_t free_cnt = 0;
+static size_t max_allocated_bytes_mema = 0;
+
+static void emit_snapshot_mema(const char *phase)
+{
+       size_t free_blocks = memarray_available(&pool);
+       size_t used_blocks = NUM_BLOCKS - free_blocks;
+       size_t current_allocated_bytes = used_blocks * BLOCK_SIZE;
+       size_t current_free_bytes = free_blocks * BLOCK_SIZE;
+
+       if (current_allocated_bytes > max_allocated_bytes_mema)
+       {
+              max_allocated_bytes_mema = current_allocated_bytes;
+       }
+       LOG_SNAP_RIOT(phase, current_free_bytes, current_allocated_bytes, max_allocated_bytes_mema);
+}
 
 int main(void)
 {
        memarray_init(&pool, pool_data, BLOCK_SIZE, NUM_BLOCKS);
 
-       printf("\r\n");
-       printf("# %s %s start\r\n", ALLOCATOR_NAME, TEST_NAME);
-       fflush(stdout);
+       LOG_TEST_START(ALLOCATOR_NAME, TEST_NAME);
+       LOG_META_RIOT(TICK_HZ);
 
-       uint32_t alloc_cnt = 0;
-       uint32_t free_cnt = 0;
+       uint32_t t1, t2, t3, t4, t5, t6, t7, t8, t9, t10;
+       void *A = NULL;
+       void *B = NULL;
+       size_t corrupt_size = BLOCK_SIZE + sizeof(void *);
 
-       size_t free_before = memarray_available(&pool);
-       size_t used_before = NUM_BLOCKS - free_before;
-       printf("SNAP,baseline,%u,%u\r\n", (unsigned)free_before,
-              (unsigned)used_before);
-       fflush(stdout);
+       emit_snapshot_mema("baseline");
 
-       uint32_t t1 = ztimer_now(ZTIMER_USEC);
-       void *A = memarray_alloc(&pool);
-       uint32_t t2 = ztimer_now(ZTIMER_USEC);
+       t1 = ztimer_now(ZTIMER_USEC);
+       A = memarray_alloc(&pool);
+       t2 = ztimer_now(ZTIMER_USEC);
        if (A)
        {
               alloc_cnt++;
-              printf("TIME,overflow,alloc,%u,%u,%u,OK,%lu,%lu\r\n", (unsigned)BLOCK_SIZE,
-                     (unsigned)t1, (unsigned)t2, alloc_cnt, free_cnt);
+              LOG_TIME_RIOT("setup", "malloc", BLOCK_SIZE, t1, t2, "OK", alloc_cnt, free_cnt);
        }
        else
        {
-              printf("TIME,overflow,alloc,%u,%u,%u,NULL,%lu,%lu\r\n",
-                     (unsigned)BLOCK_SIZE, (unsigned)t1, (unsigned)t2, alloc_cnt,
-                     free_cnt);
-              printf("# %s %s end\r\n", ALLOCATOR_NAME, TEST_NAME);
+              LOG_TIME_RIOT("setup", "malloc", BLOCK_SIZE, t1, t2, "NULL", alloc_cnt, free_cnt);
+              LOG_FAULT_RIOT(ztimer_now(ZTIMER_USEC), "OOM");
+              LOG_TEST_END(ALLOCATOR_NAME, TEST_NAME);
               return 0;
        }
-       fflush(stdout);
 
-       size_t free_after_A = memarray_available(&pool);
-       size_t used_after_A = NUM_BLOCKS - free_after_A;
-       printf("SNAP,after_alloc_A,%u,%u\r\n", (unsigned)free_after_A,
-              (unsigned)used_after_A);
-       fflush(stdout);
-
-       uint32_t t3 = ztimer_now(ZTIMER_USEC);
-       void *B = memarray_alloc(&pool);
-       uint32_t t4 = ztimer_now(ZTIMER_USEC);
+       t3 = ztimer_now(ZTIMER_USEC);
+       B = memarray_alloc(&pool);
+       t4 = ztimer_now(ZTIMER_USEC);
        if (B)
        {
               alloc_cnt++;
-              printf("TIME,overflow,alloc,%u,%u,%u,OK,%lu,%lu\r\n", (unsigned)BLOCK_SIZE,
-                     (unsigned)t3, (unsigned)t4, alloc_cnt, free_cnt);
+              LOG_TIME_RIOT("setup", "malloc", BLOCK_SIZE, t3, t4, "OK", alloc_cnt, free_cnt);
        }
        else
        {
-              printf("TIME,overflow,alloc,%u,%u,%u,NULL,%lu,%lu\r\n",
-                     (unsigned)BLOCK_SIZE, (unsigned)t3, (unsigned)t4, alloc_cnt,
-                     free_cnt);
-              memarray_free(&pool, A);
-              printf("# %s %s end\r\n", ALLOCATOR_NAME, TEST_NAME);
+              LOG_TIME_RIOT("setup", "malloc", BLOCK_SIZE, t3, t4, "NULL", alloc_cnt, free_cnt);
+              LOG_FAULT_RIOT(ztimer_now(ZTIMER_USEC), "OOM");
+              if (A)
+              {
+                     uint32_t tc_a_tin = ztimer_now(ZTIMER_USEC);
+                     memarray_free(&pool, A);
+                     uint32_t tc_a_tout = ztimer_now(ZTIMER_USEC);
+                     free_cnt++;
+                     LOG_TIME_RIOT("cleanup", "free", BLOCK_SIZE, tc_a_tin, tc_a_tout, "OK", alloc_cnt, free_cnt);
+                     A = NULL;
+              }
+              emit_snapshot_mema("post_cleanup");
+              LOG_TEST_END(ALLOCATOR_NAME, TEST_NAME);
               return 0;
        }
-       fflush(stdout);
+       emit_snapshot_mema("after_setup");
 
-       size_t free_after_B = memarray_available(&pool);
-       size_t used_after_B = NUM_BLOCKS - free_after_B;
-       printf("SNAP,after_alloc_B,%u,%u\r\n", (unsigned)free_after_B,
-              (unsigned)used_after_B);
-       fflush(stdout);
-
-       size_t corrupt_size = BLOCK_SIZE + sizeof(void *);
-       uint32_t t5 = ztimer_now(ZTIMER_USEC);
+       t5 = ztimer_now(ZTIMER_USEC);
        memset(A, 0xFF, corrupt_size);
-       uint32_t t6 = ztimer_now(ZTIMER_USEC);
-       printf("TIME,overflow,write,%u,%u,%u,OK,%lu,%lu\r\n", (unsigned)corrupt_size,
-              (unsigned)t5, (unsigned)t6, alloc_cnt, free_cnt);
-       fflush(stdout);
+       t6 = ztimer_now(ZTIMER_USEC);
+       LOG_TIME_RIOT("hof_write", "memset_overflow", corrupt_size, t5, t6, "HOF_WRITE_DONE", alloc_cnt, free_cnt);
 
-       size_t free_after_write = memarray_available(&pool);
-       size_t used_after_write = NUM_BLOCKS - free_after_write;
-       printf("SNAP,after_write,%u,%u\r\n", (unsigned)free_after_write,
-              (unsigned)used_after_write);
-       fflush(stdout);
+       emit_snapshot_mema("post_primitive_trigger");
 
-       uint32_t t7 = ztimer_now(ZTIMER_USEC);
+       t7 = ztimer_now(ZTIMER_USEC);
        memarray_free(&pool, B);
-       uint32_t t8 = ztimer_now(ZTIMER_USEC);
-       printf("TIME,overflow,free,%u,%u,%u,BAD_FREE,%lu,%lu\r\n",
-              (unsigned)BLOCK_SIZE, (unsigned)t7, (unsigned)t8, alloc_cnt, free_cnt);
-       fflush(stdout);
+       B = NULL;
+       t8 = ztimer_now(ZTIMER_USEC);
+       LOG_TIME_RIOT("cleanup", "free", BLOCK_SIZE, t7, t8, "OK", alloc_cnt, free_cnt);
 
-       size_t free_after_bad = memarray_available(&pool);
-       size_t used_after_bad = NUM_BLOCKS - free_after_bad;
-       printf("SNAP,after_badfree,%u,%u\r\n", (unsigned)free_after_bad,
-              (unsigned)used_after_bad);
-       fflush(stdout);
+       emit_snapshot_mema("after_free_B");
 
-       uint32_t t9 = ztimer_now(ZTIMER_USEC);
+       t9 = ztimer_now(ZTIMER_USEC);
        memarray_free(&pool, A);
-       uint32_t t10 = ztimer_now(ZTIMER_USEC);
+       A = NULL;
+       t10 = ztimer_now(ZTIMER_USEC);
        free_cnt++;
-       printf("TIME,cleanup,free,%u,%u,%u,OK,%lu,%lu\r\n", (unsigned)BLOCK_SIZE,
-              (unsigned)t9, (unsigned)t10, alloc_cnt, free_cnt);
-       fflush(stdout);
+       LOG_TIME_RIOT("cleanup", "free", BLOCK_SIZE, t9, t10, "OK", alloc_cnt, free_cnt);
 
-       size_t free_after_cleanup = memarray_available(&pool);
-       size_t used_after_cleanup = NUM_BLOCKS - free_after_cleanup;
-       printf("SNAP,after_cleanup,%u,%u\r\n", (unsigned)free_after_cleanup,
-              (unsigned)used_after_cleanup);
-       fflush(stdout);
+       emit_snapshot_mema("post_cleanup");
 
-       printf("# %s %s end\r\n", ALLOCATOR_NAME, TEST_NAME);
+       LOG_TEST_END(ALLOCATOR_NAME, TEST_NAME);
        return 0;
 }

@@ -1,82 +1,44 @@
-#include <inttypes.h>
 #include <zephyr/kernel.h>
-#include <zephyr/sys/mem_stats.h>
 #include <zephyr/sys/printk.h>
-#include <zephyr/sys/sys_heap.h>
+#include <stdlib.h> // For malloc, free
+#include <stdio.h>  // For snprintf
+#include <string.h> // For memset (optional, but good practice)
 
-#define ALLOCATOR_NAME "zephyr"
-#define TEST_NAME "BurstMalloc"
-#define BLOCK_SIZE 128
-#define BURST_ROUNDS 10
-#define BURST_COUNT 10
+#define ALLOC_SIZE 41
+#define GREETING_PREFIX "dynamically allocated memory"
 
 K_HEAP_DEFINE(my_heap, 65536);
 
-static uint32_t alloc_cnt, free_cnt;
-
-#define P_META() printk("META,tick_hz,%u\n", CONFIG_SYS_CLOCK_TICKS_PER_SEC)
-
-#define P_TIME(ph, op, sz, ti, to, res)                                  \
-  printk("TIME,%s,%s,%u,%" PRIu64 ",%" PRIu64 ",%s,%u,%u\n", ph, op,     \
-         (unsigned)(sz), (uint64_t)(ti), (uint64_t)(to), res, alloc_cnt, \
-         free_cnt)
-
-#define P_SNAP(ph, st)                                         \
-  printk("SNAP,%s,%zu,%zu,%zu\n", ph, (size_t)(st).free_bytes, \
-         (size_t)(st).allocated_bytes, (size_t)(st).max_allocated_bytes)
-
-#define P_FAULT(res) \
-  printk("FAULT,%" PRIu64 ",0xDEAD,%s\n", (uint64_t)k_uptime_ticks(), res)
-
-static void emit_snapshot(const char *phase)
-{
-  struct sys_memory_stats st;
-  sys_heap_runtime_stats_get(&my_heap.heap, &st);
-  P_SNAP(phase, st);
-}
-
 int main(void)
 {
-  void *buf[BURST_COUNT];
+  char *dynamic_message_buffer;
 
-  printk("# %s %s start\n", ALLOCATOR_NAME, TEST_NAME);
-  P_META();
+  printk("Zephyr Memory Demo - Concise\n\n");
 
-  for (int round = 1; round <= BURST_ROUNDS; ++round)
+  // Allocate memory using newlib's malloc
+  dynamic_message_buffer = (char *)k_heap_alloc(&my_heap, ALLOC_SIZE, K_NO_WAIT);
+
+  if (dynamic_message_buffer != NULL)
   {
+    // Initialize memory (optional, good practice)
+    memset(dynamic_message_buffer, 0, ALLOC_SIZE);
 
-    int i;
-    for (i = 0; i < BURST_COUNT; ++i)
-    {
-      uint64_t tin = k_uptime_ticks();
-      buf[i] = k_heap_alloc(&my_heap, BLOCK_SIZE, K_NO_WAIT);
-      uint64_t tout = k_uptime_ticks();
+    // Construct the message in the allocated buffer
+    snprintf(dynamic_message_buffer, ALLOC_SIZE, "%s with Zephyr", GREETING_PREFIX);
 
-      if (!buf[i])
-      {
-        P_TIME("burst", "malloc", BLOCK_SIZE, tin, tout, "NULL");
-        P_FAULT("OOM");
-        goto done;
-      }
-      ++alloc_cnt;
-      P_TIME("burst", "malloc", BLOCK_SIZE, tin, tout, "OK");
-    }
+    // Print the message
+    printk("Hello from %s\n", dynamic_message_buffer);
 
-    emit_snapshot("after_alloc");
-
-    for (int j = i - 1; j >= 0; --j)
-    {
-      uint64_t tin = k_uptime_ticks();
-      k_heap_free(&my_heap, buf[j]);
-      uint64_t tout = k_uptime_ticks();
-
-      ++free_cnt;
-      P_TIME("free", "free", BLOCK_SIZE, tin, tout, "OK");
-    }
-
-    emit_snapshot("after_free");
+    // Free the allocated memory
+    k_heap_free(&my_heap, dynamic_message_buffer);
+    dynamic_message_buffer = NULL;
+    printk("Memory freed.\n");
+  }
+  else
+  {
+    printk("malloc failed to allocate %d bytes.\n", ALLOC_SIZE);
   }
 
-done:
-  printk("# %s %s end\n", ALLOCATOR_NAME, TEST_NAME);
+  printk("\nDemo finished.\n");
+  return 0;
 }

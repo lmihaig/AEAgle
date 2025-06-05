@@ -1,4 +1,8 @@
 META,tick_hz,128
-TIME,setup,malloc,128,49,49,OK,1,0
-TIME,free1,free,128,50,50,OK,1,1
-TIME,free2,free,128,51,52,dblfree,1,2
+SNAP,baseline,50000,0,0
+TIME,setup,malloc,128,50,50,OK,1,0
+SNAP,after_setup,49856,128,128
+TIME,setup,free,128,51,51,OK,1,1
+SNAP,after_first_free,50000,0,128
+TIME,df_trigger,free,128,53,54,DF_ATTEMPT,1,1
+SNAP,post_primitive_trigger,50000,0,128

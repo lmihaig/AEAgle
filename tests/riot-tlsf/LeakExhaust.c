@@ -1,33 +1,65 @@
 #include "malloc_monitor.h"
 #include "ztimer.h"
 #include <inttypes.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define ALLOCATOR_NAME "riot-tlsf"
+#define TICK_HZ 1000000
 #define TEST_NAME "LeakExhaust"
 #define HEAP_SIZE 65536
 #define ALLOC_SIZE 128
-#define TICK_HZ 1000000
+
+#define PRINTF_LOG_RIOT(format, ...) \
+  do                                 \
+  {                                  \
+    printf(format, ##__VA_ARGS__);   \
+    fflush(stdout);                  \
+  } while (0)
+
+#define LOG_TEST_START(alloc_name, test_name_str) \
+  PRINTF_LOG_RIOT("\r\n# %s %s start\r\n", (alloc_name), (test_name_str))
+
+#define LOG_TEST_END(alloc_name, test_name_str) \
+  PRINTF_LOG_RIOT("# %s %s end\r\n", (alloc_name), (test_name_str))
+
+#define LOG_META_RIOT(tick_hz_val) \
+  PRINTF_LOG_RIOT("META,tick_hz,%u\r\n", (unsigned)(tick_hz_val))
+
+#define LOG_TIME_RIOT(phase_str, op_str, size_val, time_in, time_out, result_str, ac, fc) \
+  PRINTF_LOG_RIOT("TIME,%s,%s,%u,%u,%u,%s,%lu,%lu\r\n",                                   \
+                  (phase_str), (op_str), (unsigned)(size_val),                            \
+                  (unsigned)(time_in), (unsigned)(time_out), (result_str),                \
+                  (unsigned long)(ac), (unsigned long)(fc))
+
+#define LOG_SNAP_RIOT(phase_str, free_b_val, allocated_b_val, max_alloc_b_val) \
+  PRINTF_LOG_RIOT("SNAP,%s,%u,%u,%u\r\n",                                      \
+                  (phase_str), (unsigned)(free_b_val),                         \
+                  (unsigned)(allocated_b_val), (unsigned)(max_alloc_b_val))
+
+#define LOG_FAULT_RIOT(current_ticks, error_str) \
+  PRINTF_LOG_RIOT("FAULT,%u,0xDEAD,%s\r\n", (unsigned)(current_ticks), (error_str))
+
+static uint32_t alloc_cnt = 0;
+static uint32_t free_cnt = 0;
+
+static void emit_snapshot_riot(const char *phase)
+{
+  size_t current_usage = malloc_monitor_get_usage_current();
+  size_t high_watermark = malloc_monitor_get_usage_high_watermark();
+  LOG_SNAP_RIOT(phase, 0, current_usage, high_watermark);
+}
 
 int main(void)
 {
   malloc_monitor_reset_high_watermark();
 
-  printf("\r\n");
-  printf("# %s %s start\r\n", ALLOCATOR_NAME, TEST_NAME);
-  printf("META,TICK_HZ,%u\r\n", TICK_HZ);
+  LOG_TEST_START(ALLOCATOR_NAME, TEST_NAME);
+  LOG_META_RIOT(TICK_HZ);
 
-  fflush(stdout);
-
-  uint32_t alloc_cnt = 0;
-  uint32_t free_cnt = 0;
-
-  size_t before_cur = malloc_monitor_get_usage_current();
-  size_t before_high = malloc_monitor_get_usage_high_watermark();
-  printf("SNAP,baseline,%u,%u\r\n", (unsigned)before_cur,
-         (unsigned)before_high);
-  fflush(stdout);
+  emit_snapshot_riot("baseline");
 
   while (1)
   {
@@ -37,22 +69,16 @@ int main(void)
 
     if (!p)
     {
-      printf("EXHAUSTED,alloc_cnt=%lu,free_cnt=%lu\r\n", alloc_cnt, free_cnt);
-      fflush(stdout);
+      LOG_TIME_RIOT("leakloop", "malloc", ALLOC_SIZE, t1, t2, "NULL", alloc_cnt, free_cnt);
+      LOG_FAULT_RIOT(ztimer_now(ZTIMER_USEC), "OOM");
       break;
     }
     alloc_cnt++;
-    printf("TIME,leak,malloc,%u,%u,%u,OK,%lu,%lu\r\n", (unsigned)ALLOC_SIZE,
-           (unsigned)t1, (unsigned)t2, alloc_cnt, free_cnt);
-    fflush(stdout);
-
-    size_t cur_cur = malloc_monitor_get_usage_current();
-    size_t cur_high = malloc_monitor_get_usage_high_watermark();
-    printf("SNAP,after_malloc_%lu,%u,%u\r\n", alloc_cnt, (unsigned)cur_cur,
-           (unsigned)cur_high);
-    fflush(stdout);
+    LOG_TIME_RIOT("leakloop", "malloc", ALLOC_SIZE, t1, t2, "OK", alloc_cnt, free_cnt);
   }
 
-  printf("# %s %s end\r\n", ALLOCATOR_NAME, TEST_NAME);
+  emit_snapshot_riot("after_leakloop_exhaustion");
+
+  LOG_TEST_END(ALLOCATOR_NAME, TEST_NAME);
   return 0;
 }

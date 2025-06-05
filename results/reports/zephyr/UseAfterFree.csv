@@ -1,6 +1,6 @@
 META,tick_hz,32768
-TIME,alloc1,malloc,128,305,305,OK,1,0
-SNAP,after_alloc1,65308,132,132
-TIME,free1,free,128,510,510,OK,1,1
+TIME,setup,malloc,128,304,304,OK,1,0
+SNAP,after_setup,65308,132,132
+TIME,setup,free,128,503,503,OK,1,1
 SNAP,after_free1,65444,0,132
-TIME,uaf,memset,128,697,698,DONE,1,1
+TIME,uaf_write,memset_uaf,128,690,691,UAF_WRITE_DONE,1,1

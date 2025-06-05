@@ -47,15 +47,15 @@ int main(void)
 
     if (!p)
     {
-      P_TIME("leak", "malloc", BLOCK_SIZE, tin, tout, "NULL");
+      P_TIME("leakloop", "malloc", BLOCK_SIZE, tin, tout, "NULL");
       P_FAULT("OOM");
       break;
     }
     alloc_cnt++;
-    P_TIME("leak", "malloc", BLOCK_SIZE, tin, tout, "OK");
+    P_TIME("leakloop", "malloc", BLOCK_SIZE, tin, tout, "OK");
   }
 
-  emit_snapshot("after_exhaust");
+  emit_snapshot("after_leakloop_exhaustion");
 
   printk("# %s %s end\n", ALLOCATOR_NAME, TEST_NAME);
   return 0;

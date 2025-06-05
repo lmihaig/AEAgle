@@ -1,35 +1,74 @@
 #include "contiki.h"
 #include "lib/heapmem.h"
+#include "sys/cc.h"
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #define ALLOCATOR_NAME "contiki-heapmem"
 #define TEST_NAME "FakeFree"
 #define BLOCK_SIZE 128
 
-static uint32_t alloc_cnt = 0, free_cnt = 0;
+#define PRINTF_LOG_CONTIKI(format, ...) printf(format, ##__VA_ARGS__)
 
-#define P_META() printf("META,tick_hz,%u\r\n", CLOCK_SECOND)
-#define P_TIME(ph, op, sz, ti, to, res)                                  \
-  printf("TIME,%s,%s,%u,%lu,%lu,%s,%lu,%lu\r\n", ph, op, (unsigned)(sz), \
-         (unsigned long)(ti), (unsigned long)(to), res, alloc_cnt, free_cnt)
-#define P_FAULT(res) \
-  printf("FAULT,%lu,0xDEAD,%s\r\n", (unsigned long)clock_time(), res)
+#define LOG_TEST_START(alloc_name, test_name_str) \
+  PRINTF_LOG_CONTIKI("# %s %s start\r\n", (alloc_name), (test_name_str))
+
+#define LOG_TEST_END(alloc_name, test_name_str) \
+  PRINTF_LOG_CONTIKI("# %s %s end\r\n", (alloc_name), (test_name_str))
+
+#define LOG_META_CONTIKI(tick_hz_val) \
+  PRINTF_LOG_CONTIKI("META,tick_hz,%u\r\n", (unsigned)(tick_hz_val))
+
+#define LOG_TIME_CONTIKI(phase_str, op_str, size_val, time_in, time_out, result_str, ac, fc) \
+  PRINTF_LOG_CONTIKI("TIME,%s,%s,%u,%lu,%lu,%s,%lu,%lu\r\n",                                 \
+                     (phase_str), (op_str), (unsigned)(size_val),                            \
+                     (unsigned long)(time_in), (unsigned long)(time_out), (result_str),      \
+                     (unsigned long)(ac), (unsigned long)(fc))
+
+#define LOG_SNAP_CONTIKI(phase_str, free_b_val, allocated_b_val, max_alloc_b_val) \
+  PRINTF_LOG_CONTIKI("SNAP,%s,%lu,%lu,%lu\r\n",                                   \
+                     (phase_str), (unsigned long)(free_b_val),                    \
+                     (unsigned long)(allocated_b_val), (unsigned long)(max_alloc_b_val))
+
+#define LOG_FAULT_CONTIKI(current_ticks, error_str) \
+  PRINTF_LOG_CONTIKI("FAULT,%lu,0xDEAD,%s\r\n", (unsigned long)(current_ticks), (error_str))
+
+static uint32_t alloc_cnt = 0;
+static uint32_t free_cnt = 0;
+static unsigned long max_observed_allocated_bytes_heapmem = 0;
+static void emit_snapshot_contiki_heapmem(const char *phase)
+{
+  heapmem_stats_t stats;
+  heapmem_stats(&stats);
+
+  if (stats.allocated > max_observed_allocated_bytes_heapmem)
+  {
+    max_observed_allocated_bytes_heapmem = stats.allocated;
+  }
+  LOG_SNAP_CONTIKI(phase, stats.available, stats.allocated, max_observed_allocated_bytes_heapmem);
+}
 
 PROCESS(fake_free_test, "Fake Free Test");
 AUTOSTART_PROCESSES(&fake_free_test);
 
 PROCESS_THREAD(fake_free_test, ev, data)
 {
-  static void *p;
+  static void *p = NULL;
   static uint8_t *p_offset;
   static clock_time_t tin, tout;
   const size_t OFFSET = BLOCK_SIZE / 2;
 
   PROCESS_BEGIN();
 
-  printf("# %s %s start\r\n", ALLOCATOR_NAME, TEST_NAME);
-  P_META();
+  alloc_cnt = 0;
+  free_cnt = 0;
+  max_observed_allocated_bytes_heapmem = 0;
+
+  LOG_TEST_START(ALLOCATOR_NAME, TEST_NAME);
+  LOG_META_CONTIKI(CLOCK_SECOND);
+
+  emit_snapshot_contiki_heapmem("baseline");
 
   tin = clock_time();
   p = heapmem_alloc(BLOCK_SIZE);
@@ -37,27 +76,35 @@ PROCESS_THREAD(fake_free_test, ev, data)
 
   if (p == NULL)
   {
-    P_TIME("setup", "malloc", BLOCK_SIZE, tin, tout, "NULL");
-    P_FAULT("OOM");
-    goto done;
+    LOG_TIME_CONTIKI("setup", "malloc", BLOCK_SIZE, tin, tout, "NULL", alloc_cnt, free_cnt);
+    LOG_FAULT_CONTIKI(clock_time(), "OOM");
+    goto done_label;
   }
   alloc_cnt++;
-  P_TIME("setup", "malloc", BLOCK_SIZE, tin, tout, "OK");
+
+  LOG_TIME_CONTIKI("setup", "malloc", BLOCK_SIZE, tin, tout, "OK", alloc_cnt, free_cnt);
+  emit_snapshot_contiki_heapmem("after_setup");
 
   p_offset = (uint8_t *)p + OFFSET;
   tin = clock_time();
   heapmem_free(p_offset);
   tout = clock_time();
-  free_cnt++;
-  P_TIME("fakefree", "free", (uint32_t)OFFSET, tin, tout, "BAD_FREE");
+  LOG_TIME_CONTIKI("ff_trigger", "free", BLOCK_SIZE, tin, tout, "FF_ATTEMPT", alloc_cnt, free_cnt);
+  emit_snapshot_contiki_heapmem("post_primitive_trigger");
 
-  tin = clock_time();
-  heapmem_free(p);
-  tout = clock_time();
-  free_cnt++;
-  P_TIME("cleanup", "free", BLOCK_SIZE, tin, tout, "OK");
+  if (p != NULL)
+  {
+    tin = clock_time();
+    heapmem_free(p);
+    tout = clock_time();
+    free_cnt++;
 
-done:
-  printf("# %s %s end\r\n", ALLOCATOR_NAME, TEST_NAME);
+    LOG_TIME_CONTIKI("cleanup", "free", BLOCK_SIZE, tin, tout, "OK", alloc_cnt, free_cnt);
+    p = NULL;
+  }
+  emit_snapshot_contiki_heapmem("post_cleanup");
+
+done_label:
+  LOG_TEST_END(ALLOCATOR_NAME, TEST_NAME);
   PROCESS_END();
 }
