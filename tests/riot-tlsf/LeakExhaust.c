@@ -75,6 +75,7 @@ int main(void)
     }
     alloc_cnt++;
     LOG_TIME_RIOT("leakloop", "malloc", ALLOC_SIZE, t1, t2, "OK", alloc_cnt, free_cnt);
+    emit_snapshot_riot("after_alloc");
   }
 
   emit_snapshot_riot("after_leakloop_exhaustion");

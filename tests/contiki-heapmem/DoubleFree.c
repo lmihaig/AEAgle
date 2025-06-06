@@ -1,4 +1,5 @@
 #include "contiki.h"
+#include "sys/rtimer.h"
 #include "lib/heapmem.h"
 #include "sys/cc.h"
 #include <stdint.h>
@@ -55,7 +56,7 @@ AUTOSTART_PROCESSES(&double_free_test);
 PROCESS_THREAD(double_free_test, ev, data)
 {
   static void *p = NULL;
-  static clock_time_t tin, tout;
+  static rtimer_clock_t tin, tout;
 
   PROCESS_BEGIN();
 
@@ -64,18 +65,19 @@ PROCESS_THREAD(double_free_test, ev, data)
   max_observed_allocated_bytes_heapmem = 0;
 
   LOG_TEST_START(ALLOCATOR_NAME, TEST_NAME);
-  LOG_META_CONTIKI(CLOCK_SECOND);
+
+    LOG_META_CONTIKI(RTIMER_SECOND);
 
   emit_snapshot_contiki_heapmem("baseline");
 
-  tin = clock_time();
+  tin = RTIMER_NOW();
   p = heapmem_alloc(BLOCK_SIZE);
-  tout = clock_time();
+  tout = RTIMER_NOW();
 
   if (p == NULL)
   {
     LOG_TIME_CONTIKI("setup", "malloc", BLOCK_SIZE, tin, tout, "NULL", alloc_cnt, free_cnt);
-    LOG_FAULT_CONTIKI(clock_time(), "OOM");
+    LOG_FAULT_CONTIKI(RTIMER_NOW(), "OOM");
     goto done_label;
   }
   alloc_cnt++;
@@ -83,17 +85,17 @@ PROCESS_THREAD(double_free_test, ev, data)
   LOG_TIME_CONTIKI("setup", "malloc", BLOCK_SIZE, tin, tout, "OK", alloc_cnt, free_cnt);
   emit_snapshot_contiki_heapmem("after_setup");
 
-  tin = clock_time();
+  tin = RTIMER_NOW();
   heapmem_free(p);
-  tout = clock_time();
+  tout = RTIMER_NOW();
   free_cnt++;
 
   LOG_TIME_CONTIKI("setup", "free", BLOCK_SIZE, tin, tout, "OK", alloc_cnt, free_cnt);
   emit_snapshot_contiki_heapmem("after_first_free");
 
-  tin = clock_time();
+  tin = RTIMER_NOW();
   heapmem_free(p);
-  tout = clock_time();
+  tout = RTIMER_NOW();
   LOG_TIME_CONTIKI("df_trigger", "free", BLOCK_SIZE, tin, tout, "DF_ATTEMPT", alloc_cnt, free_cnt);
   emit_snapshot_contiki_heapmem("post_primitive_trigger");
 

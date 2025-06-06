@@ -1,4 +1,5 @@
 #include "contiki.h"
+#include "sys/rtimer.h"
 #include "lib/heapmem.h"
 #include "sys/cc.h"
 #include <stdint.h>
@@ -59,7 +60,7 @@ PROCESS_THREAD(mixed_lifetime_test, ev, data)
 {
     static void *pinned[PIN_COUNT];
     static void *buf[BURST_COUNT];
-    static clock_time_t tin, tout, t_cleanup_in, t_cleanup_out;
+    static rtimer_clock_t tin, tout, t_cleanup_in, t_cleanup_out;
     static int i, round_idx, j_idx;
     static char snap_phase_label[64];
     static int successfully_pinned = 0;
@@ -78,19 +79,20 @@ PROCESS_THREAD(mixed_lifetime_test, ev, data)
         buf[i] = NULL;
 
     LOG_TEST_START(ALLOCATOR_NAME, TEST_NAME);
-    LOG_META_CONTIKI(CLOCK_SECOND);
+
+        LOG_META_CONTIKI(RTIMER_SECOND);
 
     emit_snapshot_contiki_heapmem("baseline");
 
     for (i = 0; i < PIN_COUNT; ++i)
     {
-        tin = clock_time();
+        tin = RTIMER_NOW();
         pinned[i] = heapmem_alloc(BLOCK_SIZE * 2);
-        tout = clock_time();
+        tout = RTIMER_NOW();
         if (!pinned[i])
         {
             LOG_TIME_CONTIKI("pin", "malloc", BLOCK_SIZE * 2, tin, tout, "NULL", alloc_cnt, free_cnt);
-            LOG_FAULT_CONTIKI(clock_time(), "OOM");
+            LOG_FAULT_CONTIKI(RTIMER_NOW(), "OOM");
             goto cleanup_logic;
         }
         alloc_cnt++;
@@ -104,13 +106,13 @@ PROCESS_THREAD(mixed_lifetime_test, ev, data)
         current_burst_successful_allocs = 0;
         for (i = 0; i < BURST_COUNT; ++i)
         {
-            tin = clock_time();
+            tin = RTIMER_NOW();
             buf[i] = heapmem_alloc(BLOCK_SIZE);
-            tout = clock_time();
+            tout = RTIMER_NOW();
             if (!buf[i])
             {
                 LOG_TIME_CONTIKI("burst", "malloc", BLOCK_SIZE, tin, tout, "NULL", alloc_cnt, free_cnt);
-                LOG_FAULT_CONTIKI(clock_time(), "OOM");
+                LOG_FAULT_CONTIKI(RTIMER_NOW(), "OOM");
                 goto cleanup_logic;
             }
             alloc_cnt++;
@@ -124,9 +126,9 @@ PROCESS_THREAD(mixed_lifetime_test, ev, data)
 
         for (j_idx = current_burst_successful_allocs - 1; j_idx >= 0; --j_idx)
         {
-            tin = clock_time();
+            tin = RTIMER_NOW();
             heapmem_free(buf[j_idx]);
-            tout = clock_time();
+            tout = RTIMER_NOW();
             free_cnt++;
 
             LOG_TIME_CONTIKI("burst", "free", BLOCK_SIZE, tin, tout, "OK", alloc_cnt, free_cnt);
@@ -141,9 +143,9 @@ cleanup_logic:
     {
         if (pinned[i] != NULL)
         {
-            t_cleanup_in = clock_time();
+            t_cleanup_in = RTIMER_NOW();
             heapmem_free(pinned[i]);
-            t_cleanup_out = clock_time();
+            t_cleanup_out = RTIMER_NOW();
             pinned[i] = NULL;
             free_cnt++;
             LOG_TIME_CONTIKI("cleanup", "free", BLOCK_SIZE * 2, t_cleanup_in, t_cleanup_out, "OK", alloc_cnt, free_cnt);

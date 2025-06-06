@@ -1,4 +1,5 @@
 #include "contiki.h"
+#include "sys/rtimer.h"
 #include "lib/memb.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -72,7 +73,7 @@ AUTOSTART_PROCESSES(&use_after_free_test);
 PROCESS_THREAD(use_after_free_test, ev, data)
 {
   static struct block *p1 = NULL, *p2 = NULL;
-  static clock_time_t tin, tout, t_inspect_in, t_inspect_out, t_cleanup_in, t_cleanup_out;
+  static rtimer_clock_t tin, tout, t_inspect_in, t_inspect_out, t_cleanup_in, t_cleanup_out;
   static uint8_t *buf1;
   static int i;
   static bool leaked;
@@ -85,19 +86,20 @@ PROCESS_THREAD(use_after_free_test, ev, data)
   max_allocated_bytes_contiki_memb = 0;
 
   LOG_TEST_START(ALLOCATOR_NAME, TEST_NAME);
-  LOG_META_CONTIKI(CLOCK_SECOND);
+
+    LOG_META_CONTIKI(RTIMER_SECOND);
 
   memb_init(&test_mem);
   emit_snapshot_contiki_memb("baseline");
 
-  tin = clock_time();
+  tin = RTIMER_NOW();
   p1 = memb_alloc(&test_mem);
-  tout = clock_time();
+  tout = RTIMER_NOW();
 
   if (p1 == NULL)
   {
     LOG_TIME_CONTIKI("setup", "malloc", BLOCK_SIZE, tin, tout, "NULL", alloc_cnt, free_cnt);
-    LOG_FAULT_CONTIKI(clock_time(), "OOM");
+    LOG_FAULT_CONTIKI(RTIMER_NOW(), "OOM");
     goto done_label;
   }
   alloc_cnt++;
@@ -105,10 +107,10 @@ PROCESS_THREAD(use_after_free_test, ev, data)
   memset(p1->data, PATTERN, BLOCK_SIZE);
   emit_snapshot_contiki_memb("after_setup");
 
-  tin = clock_time();
+  tin = RTIMER_NOW();
   res_free = memb_free(&test_mem, p1);
-  tout = clock_time();
-  if (res_free == 1)
+  tout = RTIMER_NOW();
+  if (res_free == 0)
   {
     free_cnt++;
     LOG_TIME_CONTIKI("setup", "free", BLOCK_SIZE, tin, tout, "OK", alloc_cnt, free_cnt);
@@ -120,26 +122,26 @@ PROCESS_THREAD(use_after_free_test, ev, data)
   emit_snapshot_contiki_memb("after_free1");
 
   buf1 = p1->data;
-  tin = clock_time();
+  tin = RTIMER_NOW();
   memset(buf1, 0xA5, BLOCK_SIZE);
-  tout = clock_time();
+  tout = RTIMER_NOW();
   LOG_TIME_CONTIKI("uaf_write", "memset_uaf", BLOCK_SIZE, tin, tout, "UAF_WRITE_DONE", alloc_cnt, free_cnt);
   emit_snapshot_contiki_memb("after_uaf_write");
 
-  tin = clock_time();
+  tin = RTIMER_NOW();
   p2 = memb_alloc(&test_mem);
-  tout = clock_time();
+  tout = RTIMER_NOW();
 
   if (p2 == NULL)
   {
     LOG_TIME_CONTIKI("uaf_realloc", "malloc", BLOCK_SIZE, tin, tout, "NULL", alloc_cnt, free_cnt);
-    LOG_FAULT_CONTIKI(clock_time(), "OOM");
+    LOG_FAULT_CONTIKI(RTIMER_NOW(), "OOM");
     goto done_label;
   }
   alloc_cnt++;
   LOG_TIME_CONTIKI("uaf_realloc", "malloc", BLOCK_SIZE, tin, tout, "OK", alloc_cnt, free_cnt);
 
-  t_inspect_in = clock_time();
+  t_inspect_in = RTIMER_NOW();
   leaked = false;
   for (i = 0; i < BLOCK_SIZE; ++i)
   {
@@ -149,7 +151,7 @@ PROCESS_THREAD(use_after_free_test, ev, data)
       break;
     }
   }
-  t_inspect_out = clock_time();
+  t_inspect_out = RTIMER_NOW();
 
   if (leaked)
   {
@@ -165,11 +167,11 @@ PROCESS_THREAD(use_after_free_test, ev, data)
 
   if (p2 != NULL)
   {
-    t_cleanup_in = clock_time();
+    t_cleanup_in = RTIMER_NOW();
     res_free = memb_free(&test_mem, p2);
-    t_cleanup_out = clock_time();
+    t_cleanup_out = RTIMER_NOW();
     p2 = NULL;
-    if (res_free == 1)
+    if (res_free == 0)
     {
       free_cnt++;
       LOG_TIME_CONTIKI("cleanup", "free", BLOCK_SIZE, t_cleanup_in, t_cleanup_out, "OK", alloc_cnt, free_cnt);

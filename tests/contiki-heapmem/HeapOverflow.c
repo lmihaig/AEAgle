@@ -1,4 +1,5 @@
 #include "contiki.h"
+#include "sys/rtimer.h"
 #include "lib/heapmem.h"
 #include "sys/cc.h"
 #include <stdint.h>
@@ -57,7 +58,7 @@ PROCESS_THREAD(heap_overflow_test, ev, data)
 {
     static void *A = NULL, *B = NULL, *C = NULL;
     static char *overflow_ptr;
-    static clock_time_t tin, tout, t_cleanup_in, t_cleanup_out;
+    static rtimer_clock_t tin, tout, t_cleanup_in, t_cleanup_out;
 
     PROCESS_BEGIN();
 
@@ -67,30 +68,31 @@ PROCESS_THREAD(heap_overflow_test, ev, data)
     max_observed_allocated_bytes_heapmem = 0;
 
     LOG_TEST_START(ALLOCATOR_NAME, TEST_NAME);
-    LOG_META_CONTIKI(CLOCK_SECOND);
+
+        LOG_META_CONTIKI(RTIMER_SECOND);
 
     emit_snapshot_contiki_heapmem("baseline");
 
-    tin = clock_time();
+    tin = RTIMER_NOW();
     A = heapmem_alloc(BLOCK_SIZE);
-    tout = clock_time();
+    tout = RTIMER_NOW();
     if (!A)
     {
         LOG_TIME_CONTIKI("setup", "malloc", BLOCK_SIZE, tin, tout, "NULL", alloc_cnt, free_cnt);
-        LOG_FAULT_CONTIKI(clock_time(), "OOM");
+        LOG_FAULT_CONTIKI(RTIMER_NOW(), "OOM");
         goto done_label;
     }
     alloc_cnt++;
 
     LOG_TIME_CONTIKI("setup", "malloc", BLOCK_SIZE, tin, tout, "OK", alloc_cnt, free_cnt);
 
-    tin = clock_time();
+    tin = RTIMER_NOW();
     B = heapmem_alloc(BLOCK_SIZE);
-    tout = clock_time();
+    tout = RTIMER_NOW();
     if (!B)
     {
         LOG_TIME_CONTIKI("setup", "malloc", BLOCK_SIZE, tin, tout, "NULL", alloc_cnt, free_cnt);
-        LOG_FAULT_CONTIKI(clock_time(), "OOM");
+        LOG_FAULT_CONTIKI(RTIMER_NOW(), "OOM");
         goto cleanup_A_only;
     }
     alloc_cnt++;
@@ -99,19 +101,19 @@ PROCESS_THREAD(heap_overflow_test, ev, data)
     emit_snapshot_contiki_heapmem("after_setup");
 
     overflow_ptr = (char *)A;
-    tin = clock_time();
+    tin = RTIMER_NOW();
     memset(overflow_ptr, 0xFF, BLOCK_SIZE + 8);
-    tout = clock_time();
+    tout = RTIMER_NOW();
     LOG_TIME_CONTIKI("hof_write", "memset_overflow", BLOCK_SIZE + 8, tin, tout, "HOF_WRITE_DONE", alloc_cnt, free_cnt);
     emit_snapshot_contiki_heapmem("post_primitive_trigger");
 
-    tin = clock_time();
+    tin = RTIMER_NOW();
     C = heapmem_alloc(BLOCK_SIZE);
-    tout = clock_time();
+    tout = RTIMER_NOW();
     if (!C)
     {
         LOG_TIME_CONTIKI("hof_check_alloc", "malloc", BLOCK_SIZE, tin, tout, "NULL", alloc_cnt, free_cnt);
-        LOG_FAULT_CONTIKI(clock_time(), "OOM");
+        LOG_FAULT_CONTIKI(RTIMER_NOW(), "OOM");
     }
     else
     {
@@ -119,9 +121,9 @@ PROCESS_THREAD(heap_overflow_test, ev, data)
 
         LOG_TIME_CONTIKI("hof_check_alloc", "malloc", BLOCK_SIZE, tin, tout, "OK", alloc_cnt, free_cnt);
 
-        t_cleanup_in = clock_time();
+        t_cleanup_in = RTIMER_NOW();
         heapmem_free(C);
-        t_cleanup_out = clock_time();
+        t_cleanup_out = RTIMER_NOW();
         free_cnt++;
 
         LOG_TIME_CONTIKI("cleanup", "free", BLOCK_SIZE, t_cleanup_in, t_cleanup_out, "OK", alloc_cnt, free_cnt);
@@ -131,9 +133,9 @@ PROCESS_THREAD(heap_overflow_test, ev, data)
 
     if (B != NULL)
     {
-        t_cleanup_in = clock_time();
+        t_cleanup_in = RTIMER_NOW();
         heapmem_free(B);
-        t_cleanup_out = clock_time();
+        t_cleanup_out = RTIMER_NOW();
         B = NULL;
         free_cnt++;
 
@@ -143,9 +145,9 @@ PROCESS_THREAD(heap_overflow_test, ev, data)
 cleanup_A_only:
     if (A != NULL)
     {
-        t_cleanup_in = clock_time();
+        t_cleanup_in = RTIMER_NOW();
         heapmem_free(A);
-        t_cleanup_out = clock_time();
+        t_cleanup_out = RTIMER_NOW();
         A = NULL;
         free_cnt++;
         LOG_TIME_CONTIKI("cleanup", "free", BLOCK_SIZE, t_cleanup_in, t_cleanup_out, "OK", alloc_cnt, free_cnt);

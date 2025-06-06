@@ -1,4 +1,5 @@
 #include "contiki.h"
+#include "sys/rtimer.h"
 #include "lib/heapmem.h"
 #include "sys/cc.h"
 #include <stdint.h>
@@ -55,7 +56,7 @@ AUTOSTART_PROCESSES(&leak_exhaust_test);
 PROCESS_THREAD(leak_exhaust_test, ev, data)
 {
     static void *p;
-    static clock_time_t tin, tout;
+    static rtimer_clock_t tin, tout;
 
     PROCESS_BEGIN();
 
@@ -64,25 +65,27 @@ PROCESS_THREAD(leak_exhaust_test, ev, data)
     max_observed_allocated_bytes_heapmem = 0;
 
     LOG_TEST_START(ALLOCATOR_NAME, TEST_NAME);
-    LOG_META_CONTIKI(CLOCK_SECOND);
+
+    LOG_META_CONTIKI(RTIMER_SECOND);
 
     emit_snapshot_contiki_heapmem("baseline");
 
     while (1)
     {
-        tin = clock_time();
+        tin = RTIMER_NOW();
         p = heapmem_alloc(BLOCK_SIZE);
-        tout = clock_time();
+        tout = RTIMER_NOW();
 
         if (!p)
         {
             LOG_TIME_CONTIKI("leakloop", "malloc", BLOCK_SIZE, tin, tout, "NULL", alloc_cnt, free_cnt);
-            LOG_FAULT_CONTIKI(clock_time(), "OOM");
+            LOG_FAULT_CONTIKI(RTIMER_NOW(), "OOM");
             break;
         }
         alloc_cnt++;
 
         LOG_TIME_CONTIKI("leakloop", "malloc", BLOCK_SIZE, tin, tout, "OK", alloc_cnt, free_cnt);
+        emit_snapshot_contiki_heapmem("after_alloc");
     }
 
     emit_snapshot_contiki_heapmem("after_leakloop_exhaustion");

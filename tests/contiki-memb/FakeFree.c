@@ -1,4 +1,5 @@
 #include "contiki.h"
+#include "sys/rtimer.h"
 #include "lib/memb.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -65,26 +66,27 @@ PROCESS_THREAD(fake_free_test, ev, data)
 {
   static struct block *p;
   static void *p_offset;
-  static clock_time_t tin, tout;
+  static rtimer_clock_t tin, tout;
   const size_t OFFSET = BLOCK_SIZE / 2;
   static int res_free;
 
   PROCESS_BEGIN();
 
   LOG_TEST_START(ALLOCATOR_NAME, TEST_NAME);
-  LOG_META_CONTIKI(CLOCK_SECOND);
+
+    LOG_META_CONTIKI(RTIMER_SECOND);
 
   memb_init(&test_mem);
   emit_snapshot_contiki_memb("baseline");
 
-  tin = clock_time();
+  tin = RTIMER_NOW();
   p = memb_alloc(&test_mem);
-  tout = clock_time();
+  tout = RTIMER_NOW();
 
   if (p == NULL)
   {
     LOG_TIME_CONTIKI("setup", "malloc", BLOCK_SIZE, tin, tout, "NULL", alloc_cnt, free_cnt);
-    LOG_FAULT_CONTIKI(clock_time(), "OOM");
+    LOG_FAULT_CONTIKI(RTIMER_NOW(), "OOM");
     goto done_label;
   }
   alloc_cnt++;
@@ -92,9 +94,9 @@ PROCESS_THREAD(fake_free_test, ev, data)
   emit_snapshot_contiki_memb("after_setup");
 
   p_offset = (void *)((uint8_t *)p + OFFSET);
-  tin = clock_time();
+  tin = RTIMER_NOW();
   res_free = memb_free(&test_mem, p_offset);
-  tout = clock_time();
+  tout = RTIMER_NOW();
 
   if (res_free == 0)
   {
@@ -107,11 +109,11 @@ PROCESS_THREAD(fake_free_test, ev, data)
   }
   emit_snapshot_contiki_memb("post_primitive_trigger");
 
-  tin = clock_time();
+  tin = RTIMER_NOW();
   res_free = memb_free(&test_mem, p);
-  tout = clock_time();
+  tout = RTIMER_NOW();
 
-  if (res_free == 1)
+  if (res_free == 0)
   {
     free_cnt++;
     LOG_TIME_CONTIKI("cleanup", "free", BLOCK_SIZE, tin, tout, "OK", alloc_cnt, free_cnt);

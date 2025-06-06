@@ -1,4 +1,5 @@
 #include "contiki.h"
+#include "sys/rtimer.h"
 #include "lib/memb.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -6,8 +7,8 @@
 
 #define ALLOCATOR_NAME "contiki-memb"
 #define TEST_NAME "LeakExhaust"
-#define BLOCK_SIZE 128
 #define BLOCK_COUNT 256
+#define BLOCK_SIZE 128
 
 #define PRINTF_LOG_CONTIKI(format, ...) printf(format, ##__VA_ARGS__)
 
@@ -65,30 +66,32 @@ AUTOSTART_PROCESSES(&leak_exhaust_test);
 PROCESS_THREAD(leak_exhaust_test, ev, data)
 {
   static struct block *p;
-  static clock_time_t tin, tout;
+  static rtimer_clock_t tin, tout;
 
   PROCESS_BEGIN();
 
   LOG_TEST_START(ALLOCATOR_NAME, TEST_NAME);
-  LOG_META_CONTIKI(CLOCK_SECOND);
+
+  LOG_META_CONTIKI(RTIMER_SECOND);
 
   memb_init(&test_mem);
   emit_snapshot_contiki_memb("baseline");
 
   while (1)
   {
-    tin = clock_time();
+    tin = RTIMER_NOW();
     p = memb_alloc(&test_mem);
-    tout = clock_time();
+    tout = RTIMER_NOW();
 
     if (p == NULL)
     {
       LOG_TIME_CONTIKI("leakloop", "malloc", BLOCK_SIZE, tin, tout, "NULL", alloc_cnt, free_cnt);
-      LOG_FAULT_CONTIKI(clock_time(), "OOM");
+      LOG_FAULT_CONTIKI(RTIMER_NOW(), "OOM");
       break;
     }
     alloc_cnt++;
     LOG_TIME_CONTIKI("leakloop", "malloc", BLOCK_SIZE, tin, tout, "OK", alloc_cnt, free_cnt);
+    emit_snapshot_contiki_memb("after_alloc");
   }
 
   emit_snapshot_contiki_memb("after_leakloop_exhaustion");

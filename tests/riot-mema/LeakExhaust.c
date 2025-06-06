@@ -9,7 +9,7 @@
 #define ALLOCATOR_NAME "riot-mema"
 #define TICK_HZ 1000000
 #define TEST_NAME "LeakExhaust"
-#define NUM_BLOCKS 32
+#define NUM_BLOCKS 256
 #define BLOCK_SIZE 128
 
 #define PRINTF_LOG_RIOT(format, ...) \

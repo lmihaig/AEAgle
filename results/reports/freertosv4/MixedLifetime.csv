@@ -130,7 +130,7 @@ SNAP,after_burst_alloc_06,57440,8096,8096
 TIME,burst,free,128,458,458,OK,65,51
 TIME,burst,free,128,461,461,OK,65,52
 TIME,burst,free,128,465,465,OK,65,53
-TIME,burst,free,128,468oc_07,57440,8096,8096
+TIME,burst,free,128,468,after_burst_alloc_07,57440,8096,8096
 TIME,burst,free,128,537,537,OK,75,61
 TIME,burst,free,128,541,541,OK,75,62
 TIME,burst,free,128,544,544,OK,75,63
