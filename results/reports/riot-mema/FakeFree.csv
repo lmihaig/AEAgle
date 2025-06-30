@@ -1,8 +1,0 @@
-META,tick_hz,1000000
-SNAP,baseline,4096,0,0
-TIME,setup,malloc,128,11524,11526,OK,1,0
-SNAP,after_setup,3968,128,128
-TIME,ff_trigger,free,128,17892,17894,FF_ATTEMPT,1,0
-SNAP,post_primitive_trigger,4096,0,128
-TIME,cleanup,free,128,26012,26014,OK,1,1
-SNAP,post_cleanup,4224,4294967168,4294967168
